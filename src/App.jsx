@@ -54,27 +54,22 @@ export default function App() {
     );
   };
 
-  // 필터링 로직: 선택된 태그가 포함된 리뷰만 골라냄
-  const filteredReviews = REVIEWS.filter(review => {
-    if (selectedTag === '전체') return true;
-    return review.tags && review.tags.includes(selectedTag);
-  });
-
   // 화면에 보여줄 태그 리스트
   const tags = ["전체", "바다뷰", "주차가능", "반려동물동반", "일출맛집"];
 
-  // 1. filteredReviews라는 새로운 '바구니'를 만듭니다.
-const filteredReviews = REVIEWS.filter(review => {
-  
-  // 2. 장소 이름에 내가 검색창에 쓴 글자(searchQuery)가 들어있니?
-  const matchesLocation = review.location.includes(searchQuery);
-  
-  // 3. 혹은, 태그들(#바다뷰 등) 중에 내가 쓴 글자가 들어있니?
-  const matchesTags = review.tags.some(tag => tag.includes(searchQuery));
-  
-  // 4. 이름이나 태그 중 하나라도 맞으면 이 리뷰를 '바구니'에 담아!
-  return matchesLocation || matchesTags;
-});
+  // 필터링 로직: 태그 필터 + 검색어 필터를 모두 적용
+  const filteredReviews = REVIEWS.filter(review => {
+    // 1. 태그 필터 확인
+    const matchesTag = selectedTag === '전체' || (review.tags && review.tags.includes(selectedTag));
+    
+    // 2. 검색어 필터 확인
+    const matchesLocation = review.location.includes(searchQuery);
+    const matchesTags = review.tags.some(tag => tag.includes(searchQuery));
+    const matchesSearch = matchesLocation || matchesTags;
+    
+    // 3. 두 조건을 모두 만족해야 함
+    return matchesTag && (searchQuery === '' || matchesSearch);
+  });
   return (
     <div className="flex flex-col h-full bg-slate-50 font-sans text-slate-900 overflow-hidden">
       {/* 상단 헤더 */}
