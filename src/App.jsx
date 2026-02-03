@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Map as MapIcon, Star, Heart, MessageSquare, User, Home, MapPin, ChevronRight, Filter, ImageOff, Plus, Minus, Navigation } from 'lucide-react';
+import { Search, Map as MapIcon, Star, Heart, MessageSquare, User, Home, MapPin, ChevronRight, Filter, ImageOff, Plus, Minus, Navigation, LogOut } from 'lucide-react';
 
 // 제주도 특화 Mock Data (카테고리 필드 포함)
 const REVIEWS = [
@@ -55,10 +55,8 @@ const REVIEWS = [
 
 const CATEGORIES = ["전체", "해변", "오름/숲", "맛집", "카페", "테마파크"];
 
-// 이미지 로딩 실패 처리를 위한 컴포넌트
 const SafeImage = ({ src, alt, className }) => {
   const [error, setError] = useState(false);
-
   if (error) {
     return (
       <div className={`${className} bg-gray-100 flex flex-col items-center justify-center text-gray-400 gap-2`}>
@@ -67,18 +65,9 @@ const SafeImage = ({ src, alt, className }) => {
       </div>
     );
   }
-
-  return (
-    <img 
-      src={src} 
-      alt={alt} 
-      className={className} 
-      onError={() => setError(true)} 
-    />
-  );
+  return <img src={src} alt={alt} className={className} onError={() => setError(true)} />;
 };
 
-// Kakao Maps SDK 동적 로더
 function loadKakaoMap(appkey) {
   return new Promise((resolve, reject) => {
     if (window.kakao && window.kakao.maps) return resolve(window.kakao);
@@ -96,7 +85,7 @@ function loadKakaoMap(appkey) {
         }
         if (attempts > 10) {
           clearInterval(timer);
-          return reject(new Error('kakao.maps not available after script load'));
+          return reject(new Error('kakao.maps not available'));
         }
       }, 200);
     };
@@ -108,9 +97,7 @@ function loadKakaoMap(appkey) {
 const App = () => {
   const [activeTab, setActiveTab] = useState('home');
   const [selectedCategory, setSelectedCategory] = useState("전체");
-  const [selectedPlace, setSelectedPlace] = useState(null);
 
-  // --- [찜하기 상태 관리 및 로컬 저장 로직] ---
   const [savedIds, setSavedIds] = useState(() => {
     const saved = localStorage.getItem('jeju-saved-ids');
     return saved ? JSON.parse(saved) : [];
@@ -121,7 +108,7 @@ const App = () => {
   }, [savedIds]);
 
   const toggleSave = (id, e) => {
-    e.stopPropagation(); // 카드 클릭 시 발생하는 다른 이벤트 방지
+    e.stopPropagation();
     setSavedIds(prev => 
       prev.includes(id) 
         ? prev.filter(savedId => savedId !== id) 
@@ -129,7 +116,6 @@ const App = () => {
     );
   };
 
-  // 공통 리뷰 리스트 렌더링 컴포넌트
   const ReviewList = ({ items, emptyMessage }) => (
     <div className="px-4 space-y-6 pt-2">
       {items.length > 0 ? (
@@ -196,14 +182,31 @@ const App = () => {
 
     return (
       <div className="pb-24">
+        {/* 브랜드 헤더 영역 */}
+        <div className="bg-white px-5 pt-6 pb-2 flex justify-between items-start">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl overflow-hidden shadow-sm border border-gray-100">
+              <img src="/favicon.jpg" alt="Logo" className="w-full h-full object-cover" />
+            </div>
+            <div>
+              <h1 className="text-xl font-black text-[#45a494] tracking-tight">고치가게</h1>
+              {/* 요청하신 대로 'Jeju Guide'에서 'Jeju Wheel-Trip'으로 수정되었습니다 */}
+              <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Jeju Wheel-Trip</p>
+            </div>
+          </div>
+          <button className="p-2 text-gray-300 hover:text-gray-500 transition-colors">
+            <LogOut size={20} />
+          </button>
+        </div>
+
         {/* Search Header */}
-        <div className="sticky top-0 bg-white z-10 p-4 border-b">
+        <div className="sticky top-0 bg-white z-10 p-4 pt-2">
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+            <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
             <input 
               type="text" 
-              placeholder="제주의 어디로 떠나고 싶으신가요?" 
-              className="w-full bg-gray-100 rounded-full py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+              placeholder="어디가 궁금하신가요?" 
+              className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-3.5 pl-11 pr-4 focus:outline-none focus:ring-2 focus:ring-[#45a494]/20 text-sm transition-all"
             />
           </div>
         </div>
@@ -214,8 +217,8 @@ const App = () => {
             <button
               key={cat}
               onClick={() => setSelectedCategory(cat)}
-              className={`px-4 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors ${
-                selectedCategory === cat ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              className={`px-4 py-1.5 rounded-full text-sm font-bold whitespace-nowrap transition-colors ${
+                selectedCategory === cat ? 'bg-[#45a494] text-white shadow-md shadow-[#45a494]/20' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
               }`}
             >
               {cat}
@@ -223,10 +226,9 @@ const App = () => {
           ))}
         </div>
 
-        {/* Review Feed */}
         <div className="px-4 mb-4 flex justify-between items-end">
-          <h2 className="text-xl font-bold text-gray-800">지금 뜨는 제주 리뷰</h2>
-          <span className="text-xs text-blue-600 font-medium cursor-pointer">더보기</span>
+          <h2 className="text-lg font-bold text-gray-800">지금 뜨는 고치가게 리뷰</h2>
+          <span className="text-xs text-[#45a494] font-bold cursor-pointer">전체보기</span>
         </div>
         
         <ReviewList items={filteredReviews} emptyMessage="해당 카테고리의 리뷰가 없습니다." />
@@ -234,7 +236,6 @@ const App = () => {
     );
   };
 
-  // 찜 목록 보기 뷰
   const SavedView = () => {
     const savedReviews = REVIEWS.filter(r => savedIds.includes(r.id));
     return (
@@ -250,25 +251,21 @@ const App = () => {
 
   const MapView = () => {
     const mapRef = useRef(null);
-
     useEffect(() => {
       const APP_KEY = '0c9feebe33a63b61c3364f8b447bf13a';
       let mounted = true;
-
       loadKakaoMap(APP_KEY).then((kakao) => {
         if (!mounted || !mapRef.current) return;
         const container = mapRef.current;
         const center = new kakao.maps.LatLng(33.4996, 126.5312);
         const map = new kakao.maps.Map(container, { center, level: 9 });
-
         REVIEWS.forEach((r, i) => {
-          const marker = new kakao.maps.Marker({ 
+          new kakao.maps.Marker({ 
             position: new kakao.maps.LatLng(33.4996 + (i - 1.5) * 0.05, 126.5312 + (i - 1.5) * 0.05),
             map: map 
           });
         });
       }).catch((e) => console.error('Map load failed', e));
-
       return () => { mounted = false; };
     }, []);
 
@@ -278,7 +275,7 @@ const App = () => {
         <div className="absolute top-4 left-4 right-4 z-10">
           <div className="bg-white/90 backdrop-blur-md p-2 rounded-xl shadow-lg border border-white/20 flex gap-2">
             <Search className="w-5 h-5 text-gray-400 m-2" />
-            <input type="text" placeholder="주변 명소 검색" className="flex-1 bg-transparent text-sm focus:outline-none" />
+            <input type="text" placeholder="고치가게 주변 명소 검색" className="flex-1 bg-transparent text-sm focus:outline-none" />
           </div>
         </div>
       </div>
@@ -298,9 +295,9 @@ const App = () => {
               <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-4">
                 <User className="w-10 h-10 text-gray-300" />
               </div>
-              <h4 className="text-gray-800 font-bold mb-1">로그인이 필요합니다</h4>
+              <h4 className="text-gray-800 font-bold mb-1">고치가게 로그인이 필요합니다</h4>
               <p className="text-sm">나의 여행 기록을 저장하고<br/>친구들과 공유해보세요!</p>
-              <button className="mt-6 w-full bg-blue-600 text-white py-3 rounded-xl font-bold">로그인 / 회원가입</button>
+              <button className="mt-6 w-full bg-[#45a494] text-white py-3 rounded-xl font-bold shadow-lg shadow-[#45a494]/20">로그인 / 회원가입</button>
             </div>
           )}
         </main>
@@ -308,20 +305,20 @@ const App = () => {
         <nav className="fixed bottom-0 w-full max-w-md bg-white/80 backdrop-blur-lg border-t border-gray-100 px-6 py-3 flex justify-between items-center z-20">
           <button 
             onClick={() => setActiveTab('home')}
-            className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'home' ? 'text-blue-600 scale-110' : 'text-gray-400'}`}
+            className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'home' ? 'text-[#45a494] scale-110' : 'text-gray-400'}`}
           >
             <Home className="w-6 h-6" />
             <span className="text-[10px] font-bold">홈</span>
           </button>
           <button 
             onClick={() => setActiveTab('map')}
-            className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'map' ? 'text-blue-600 scale-110' : 'text-gray-400'}`}
+            className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'map' ? 'text-[#45a494] scale-110' : 'text-gray-400'}`}
           >
             <MapIcon className="w-6 h-6" />
             <span className="text-[10px] font-bold">탐색</span>
           </button>
           <div className="relative -top-5">
-            <button className="w-14 h-14 bg-gradient-to-tr from-blue-600 to-blue-400 rounded-full shadow-lg shadow-blue-200 flex items-center justify-center text-white transform active:scale-95 transition-transform">
+            <button className="w-14 h-14 bg-gradient-to-tr from-[#45a494] to-[#68c9b9] rounded-full shadow-lg shadow-[#45a494]/20 flex items-center justify-center text-white transform active:scale-95 transition-transform">
               <span className="text-3xl font-light">+</span>
             </button>
           </div>
@@ -334,7 +331,7 @@ const App = () => {
           </button>
           <button 
             onClick={() => setActiveTab('profile')}
-            className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'profile' ? 'text-blue-600 scale-110' : 'text-gray-400'}`}
+            className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'profile' ? 'text-[#45a494] scale-110' : 'text-gray-400'}`}
           >
             <User className="w-6 h-6" />
             <span className="text-[10px] font-bold">마이</span>
