@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Map as MapIcon, Star, Heart, MessageSquare, User, Home, MapPin, ChevronRight, Filter, ImageOff, Plus, Minus, Navigation } from 'lucide-react';
 
-// 제주도 특화 Mock Data
+// 제주도 특화 Mock Data (tags 데이터 추가 버전)
 const REVIEWS = [
   {
     id: 1,
@@ -12,372 +12,214 @@ const REVIEWS = [
     image: "https://images.unsplash.com/photo-1549693578-d683be217e58?q=80&w=1000&auto=format&fit=crop",
     likes: 342,
     replies: 45,
-    coords: { x: 85, y: 45 } // 지도상 위치 (백분율)
+    tags: ["바다뷰", "일출맛집"],
+    coords: { x: 85, y: 45 }
   },
   {
     id: 2,
     user: "바다아이",
     location: "제주시 협재 해수욕장",
     rating: 4.7,
-    comment: "비양도가 손에 잡힐 듯 보이는 에메랄드빛 바다는 언제 봐도 감동적이에요. 투명한 물속으로 물고기들이 보일 정도로 깨끗하고, 주변에 예쁜 카페들이 많아 하루 종일 머물기 좋습니다. 특히 일몰 시간에 방문하시는 것을 강력 추천드려요!",
-    image: "https://images.unsplash.com/photo-1621274220348-4122ec030991?q=80&w=1000&auto=format&fit=crop",
-    likes: 528,
-    replies: 84,
-    coords: { x: 15, y: 40 }
+    comment: "비양도가 손에 잡힐 듯 보이는 에메랄드빛 바다는 언제 봐도 감동적이에요. 주변에 예쁜 카페들이 많아 좋습니다.",
+    image: "https://images.unsplash.com/photo-1515238152791-8216bfdf89a7?q=80&w=1000&auto=format&fit=crop",
+    likes: 215,
+    replies: 12,
+    tags: ["바다뷰", "주차가능", "반려동물동반"],
+    coords: { x: 25, y: 35 }
   },
   {
     id: 3,
-    user: "숲속산책",
-    location: "제주시 사려니숲길",
+    user: "고기러버",
+    location: "칠돈가",
     rating: 4.8,
-    comment: "안개 낀 날 방문했는데 몽환적인 분위기가 정말 최고였어요. 삼나무 향기를 맡으며 걷는 것만으로도 힐링이 됩니다.",
-    image: "https://images.unsplash.com/photo-1511497584788-876760111969?q=80&w=1000&auto=format&fit=crop",
+    comment: "제주도 하면 흑돼지, 흑돼지 하면 칠돈가죠! 육즙이 살아있고 직원분들이 직접 구워주셔서 정말 편해요.",
+    image: "https://images.unsplash.com/photo-1544025162-d76694265947?q=80&w=1000&auto=format&fit=crop",
     likes: 189,
-    replies: 22,
-    coords: { x: 55, y: 50 }
-  },
-  {
-    id: 4,
-    user: "감귤러버",
-    location: "서귀포 카멜리아 힐",
-    rating: 4.6,
-    comment: "계절마다 다른 꽃들이 반겨주는 곳이에요. 겨울에 피는 동백꽃은 정말 사진 찍기 최고의 스팟입니다.",
-    image: "https://images.unsplash.com/photo-1490750967868-88aa4486c946?q=80&w=1000&auto=format&fit=crop",
-    likes: 156,
-    replies: 10,
-    coords: { x: 30, y: 75 }
+    replies: 28,
+    tags: ["주차가능"], // 직접 추가하신 부분 반영!
+    coords: { x: 45, y: 40 }
   }
 ];
 
-const CATEGORIES = ["전체", "해변", "오름/숲", "맛집", "카페", "테마파크"];
-
-// 이미지 로딩 실패 처리를 위한 컴포넌트
-const SafeImage = ({ src, alt, className }) => {
-  const [error, setError] = useState(false);
-
-  if (error) {
-    return (
-      <div className={`${className} bg-gray-100 flex flex-col items-center justify-center text-gray-400 gap-2`}>
-        <ImageOff className="w-10 h-10 opacity-50" />
-        <span className="text-[10px]">이미지 없음</span>
-      </div>
-    );
-  }
-
-  return (
-    <img 
-      src={src} 
-      alt={alt} 
-      className={className} 
-      onError={() => setError(true)} 
-    />
-  );
-};
-
-// Kakao Maps SDK 동적 로더
-function loadKakaoMap(appkey) {
-  return new Promise((resolve, reject) => {
-    if (window.kakao && window.kakao.maps) return resolve(window.kakao);
-    const script = document.createElement('script');
-    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${appkey}&autoload=true`;
-    script.async = true;
-    script.onload = () => {
-      if (window.kakao && window.kakao.maps) return resolve(window.kakao);
-      // fallback: wait a short time for the kakao.maps namespace to become available
-      let attempts = 0;
-      const timer = setInterval(() => {
-        attempts += 1;
-        if (window.kakao && window.kakao.maps) {
-          clearInterval(timer);
-          return resolve(window.kakao);
-        }
-        if (attempts > 10) {
-          clearInterval(timer);
-          return reject(new Error('kakao.maps not available after script load'));
-        }
-      }, 200);
-    };
-    script.onerror = (err) => reject(err);
-    document.head.appendChild(script);
-  });
-}
-
-const App = () => {
+export default function App() {
+  const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState('home');
-  const [selectedCategory, setSelectedCategory] = useState("전체");
-  const [selectedPlace, setSelectedPlace] = useState(null);
+  const [selectedTag, setSelectedTag] = useState('전체'); // 현재 선택된 필터 태그
+  const [favorites, setFavorites] = useState([]); // 찜 목록 상태
 
-  // 메인 피드 컴포넌트
-  const HomeView = () => (
-    <div className="pb-24">
-      {/* Search Header */}
-      <div className="sticky top-0 bg-white z-10 p-4 border-b">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-          <input 
-            type="text" 
-            placeholder="제주의 어디로 떠나고 싶으신가요?" 
-            className="w-full bg-gray-100 rounded-full py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-          />
-        </div>
-      </div>
-
-      {/* Categories */}
-      <div className="flex overflow-x-auto p-4 gap-2 no-scrollbar">
-        {CATEGORIES.map((cat) => (
-          <button
-            key={cat}
-            onClick={() => setSelectedCategory(cat)}
-            className={`px-4 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors ${
-              selectedCategory === cat ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
-          >
-            {cat}
-          </button>
-        ))}
-      </div>
-
-      {/* Review Feed */}
-      <div className="px-4 space-y-6">
-        <div className="flex justify-between items-end">
-          <h2 className="text-xl font-bold text-gray-800">지금 뜨는 제주 리뷰</h2>
-          <span className="text-xs text-blue-600 font-medium cursor-pointer">더보기</span>
-        </div>
-        
-        {REVIEWS.map((review) => (
-          <div key={review.id} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-            <div className="relative h-64">
-              <SafeImage src={review.image} alt={review.location} className="w-full h-full object-cover" />
-              <button className="absolute top-4 right-4 p-2 bg-black/20 backdrop-blur-md rounded-full text-white hover:bg-black/40 transition-colors">
-                <Heart className="w-5 h-5" />
-              </button>
-              <div className="absolute bottom-4 left-4 flex items-center bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg shadow-sm">
-                <Star className="w-3.5 h-3.5 text-yellow-500 fill-yellow-500 mr-1" />
-                <span className="text-xs font-bold text-gray-800">{review.rating}</span>
-              </div>
-            </div>
-            <div className="p-4">
-              <div className="flex justify-between items-start mb-2">
-                <div>
-                  <div className="flex items-center text-blue-600 text-xs font-semibold mb-1">
-                    <MapPin className="w-3 h-3 mr-1" />
-                    {review.location}
-                  </div>
-                  <h3 className="font-bold text-lg">{review.user}님의 여행 기록</h3>
-                </div>
-              </div>
-              <p className="text-gray-600 text-sm line-clamp-3 mb-4 leading-relaxed">
-                {review.comment}
-              </p>
-              <div className="flex items-center justify-between pt-4 border-t border-gray-50 text-gray-400">
-                <div className="flex gap-4">
-                  <span className="flex items-center text-xs">
-                    <Heart className="w-4 h-4 mr-1 text-red-400" /> {review.likes}
-                  </span>
-                  <span className="flex items-center text-xs">
-                    <MessageSquare className="w-4 h-4 mr-1" /> {review.replies}
-                  </span>
-                </div>
-                <button className="text-xs font-bold text-blue-600 flex items-center hover:underline">
-                  전체보기 <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-
-  // 지도 뷰 (Kakao Maps 연동)
-  const MapView = () => {
-    const mapRef = useRef(null);
-
-    useEffect(() => {
-      const APP_KEY = '0c9feebe33a63b61c3364f8b447bf13a';
-      let kakaoMap = null;
-      let markers = [];
-      let mounted = true;
-
-      loadKakaoMap(APP_KEY).then((kakao) => {
-        if (!mounted) return;
-        const container = mapRef.current;
-        if (!container) return;
-        const center = new kakao.maps.LatLng(33.4996, 126.5312);
-        kakaoMap = new kakao.maps.Map(container, { center, level: 9 });
-
-        // 중앙 마커
-        const centerMarker = new kakao.maps.Marker({ position: center });
-        centerMarker.setMap(kakaoMap);
-        markers.push(centerMarker);
-
-        // REVIEWS 기반 간단한 마커 배치 (데모용 약간 위치 보정)
-        REVIEWS.forEach((r, i) => {
-          const lat = 33.4996 + (i - 1.5) * 0.02;
-          const lng = 126.5312 + (i - 1.5) * 0.02;
-          const marker = new kakao.maps.Marker({ position: new kakao.maps.LatLng(lat, lng) });
-          marker.setMap(kakaoMap);
-          markers.push(marker);
-        });
-      }).catch((e) => {
-        console.error('Kakao Maps 로드 실패', e);
-      });
-
-      return () => {
-        mounted = false;
-        if (markers.length) markers.forEach((m) => m.setMap(null));
-      };
-    }, []);
-
-    return (
-      <div className="h-full flex flex-col">
-        <div className="p-4 bg-white border-b flex justify-between items-center z-10">
-        <div className="flex-1 mr-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <input 
-              type="text" 
-              placeholder="주변 명소 검색" 
-              className="w-full bg-gray-100 rounded-lg py-2 pl-9 pr-4 text-xs focus:outline-none"
-            />
-          </div>
-        </div>
-        <button className="p-2 bg-gray-100 rounded-lg">
-          <Filter className="w-4 h-4 text-gray-600" />
-        </button>
-      </div>
-      
-        {/* Map container */}
-        <div className="flex-1 relative overflow-hidden" onClick={() => setSelectedPlace(null)}>
-          <div ref={mapRef} className="absolute inset-0" style={{ minHeight: 300 }} />
-
-          {/* Map Controls (UI only) */}
-          <div className="absolute bottom-32 right-4 flex flex-col gap-2">
-            <button className="w-10 h-10 bg-white rounded-lg shadow-md flex items-center justify-center text-gray-600 active:bg-gray-50">
-              <Navigation className="w-5 h-5" />
-            </button>
-            <div className="flex flex-col bg-white rounded-lg shadow-md overflow-hidden">
-              <button className="w-10 h-10 flex items-center justify-center text-gray-600 border-b border-gray-100 active:bg-gray-50">
-                <Plus className="w-5 h-5" />
-              </button>
-              <button className="w-10 h-10 flex items-center justify-center text-gray-600 active:bg-gray-50">
-                <Minus className="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-
-          {/* Selected Place Overlay Card (kept for UX parity) */}
-          {selectedPlace && (
-            <div className="absolute bottom-6 left-4 right-4 z-40 animate-in fade-in slide-in-from-bottom-4 duration-300">
-              <div className="bg-white rounded-2xl shadow-2xl p-3 flex gap-4 border border-blue-50">
-                <div className="w-24 h-24 rounded-xl overflow-hidden flex-shrink-0">
-                  <SafeImage src={selectedPlace.image} alt="" className="w-full h-full object-cover" />
-                </div>
-                <div className="flex-1 flex flex-col justify-between py-1">
-                  <div>
-                    <h4 className="font-bold text-gray-800 text-sm">{selectedPlace.location}</h4>
-                    <div className="flex items-center mt-1">
-                      <Star className="w-3 h-3 text-yellow-500 fill-yellow-500 mr-1" />
-                      <span className="text-xs font-bold text-gray-700">{selectedPlace.rating}</span>
-                      <span className="mx-1 text-gray-300 text-[10px]">•</span>
-                      <span className="text-[10px] text-gray-500">리뷰 {selectedPlace.replies}</span>
-                    </div>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-[10px] text-blue-600 font-semibold">{selectedPlace.user}님의 추천</span>
-                    <button className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[10px] font-bold">
-                      상세보기
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+  // 찜하기 토글 함수
+  const toggleFavorite = (id) => {
+    setFavorites(prev => 
+      prev.includes(id) ? prev.filter(favId => favId !== id) : [...prev, id]
     );
   };
 
-  return (
-    <div className="flex justify-center bg-gray-100 min-h-screen">
-      <div className="w-full max-w-md bg-white min-h-screen shadow-2xl flex flex-col relative overflow-hidden">
-        
-        <main className="flex-1 overflow-y-auto no-scrollbar bg-white">
-          {activeTab === 'home' && <HomeView />}
-          {activeTab === 'map' && <MapView />}
-          {activeTab === 'profile' && (
-            <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8 text-center">
-              <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-4">
-                <User className="w-10 h-10 text-gray-300" />
-              </div>
-              <h4 className="text-gray-800 font-bold mb-1">로그인이 필요합니다</h4>
-              <p className="text-sm">나의 여행 기록을 저장하고<br/>친구들과 공유해보세요!</p>
-              <button className="mt-6 w-full bg-blue-600 text-white py-3 rounded-xl font-bold">로그인 / 회원가입</button>
-            </div>
-          )}
-        </main>
+  // 화면에 보여줄 태그 리스트
+  const tags = ["전체", "바다뷰", "주차가능", "반려동물동반", "일출맛집"];
 
-        <nav className="fixed bottom-0 w-full max-w-md bg-white/80 backdrop-blur-lg border-t border-gray-100 px-6 py-3 flex justify-between items-center z-20">
-          <button 
-            onClick={() => setActiveTab('home')}
-            className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'home' ? 'text-blue-600 scale-110' : 'text-gray-400'}`}
+  // 필터링 로직: 태그 필터 + 검색어 필터를 모두 적용
+  const filteredReviews = REVIEWS.filter(review => {
+    // 1. 태그 필터 확인
+    const matchesTag = selectedTag === '전체' || (review.tags && review.tags.includes(selectedTag));
+    
+    // 2. 검색어 필터 확인
+    const matchesLocation = review.location.includes(searchQuery);
+    const matchesTags = review.tags.some(tag => tag.includes(searchQuery));
+    const matchesSearch = matchesLocation || matchesTags;
+    
+    // 3. 두 조건을 모두 만족해야 함
+    return matchesTag && (searchQuery === '' || matchesSearch);
+  });
+  return (
+    <div className="flex flex-col h-full bg-slate-50 font-sans text-slate-900 overflow-hidden">
+      {/* 상단 헤더 */}
+      <header className="px-6 py-4 bg-white flex items-center justify-between border-b border-slate-100 shrink-0">
+        <h1 className="text-2xl font-black tracking-tight text-blue-600">Jeju Reviews</h1>
+        <button className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors">
+          <Search className="w-5 h-5 text-slate-600" />
+        </button>
+      </header>
+
+      {/* 필터 탭 영역 (3단계) */}
+      <div className="bg-white px-4 py-3 flex gap-2 overflow-x-auto no-scrollbar border-b border-slate-100 shrink-0">
+        {tags.map((tag) => (
+          <button
+            key={tag}
+            onClick={() => setSelectedTag(tag)}
+            className={`px-4 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-all
+              ${selectedTag === tag 
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-100 scale-105' 
+                : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
           >
-            <Home className="w-6 h-6" />
-            <span className="text-[10px] font-bold">홈</span>
+            {tag === '전체' ? tag : `#${tag}`}
           </button>
-          <button 
-            onClick={() => {
-              setActiveTab('map');
-              setSelectedPlace(null);
-            }}
-            className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'map' ? 'text-blue-600 scale-110' : 'text-gray-400'}`}
-          >
-            <MapIcon className="w-6 h-6" />
-            <span className="text-[10px] font-bold">탐색</span>
-          </button>
-          <div className="relative -top-5">
-            <button className="w-14 h-14 bg-gradient-to-tr from-blue-600 to-blue-400 rounded-full shadow-lg shadow-blue-200 flex items-center justify-center text-white transform active:scale-95 transition-transform">
-              <span className="text-3xl font-light">+</span>
-            </button>
+        ))}
+      </div>
+
+      {/* 메인 콘텐츠 영역 */}
+      <main className="flex-1 overflow-y-auto no-scrollbar pb-24">
+        {activeTab === 'home' && (
+          <div className="p-4 space-y-6 animate-[fade-in_0.4s_ease-out]">
+            <div className="flex items-center justify-between px-2">
+              <h2 className="text-lg font-bold flex items-center gap-2">
+                <Star className="w-5 h-5 text-yellow-400 fill-yellow-400" />
+                {selectedTag === '전체' ? '지금 뜨는 리뷰' : `${selectedTag} 추천 장소`}
+              </h2>
+              <span className="text-xs font-bold text-slate-400">전체보기</span>
+            </div>
+
+            {/* 리뷰 카드 목록 (4단계: filteredReviews 사용) */}
+            <div className="space-y-4">
+              {filteredReviews.length > 0 ? (
+                filteredReviews.map((review) => (
+                  <div key={review.id} className="bg-white rounded-3xl overflow-hidden shadow-sm border border-slate-100 group">
+                    <div className="relative h-64 overflow-hidden">
+                      <img 
+                        src={review.image} 
+                        alt={review.location} 
+                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                      />
+                      <div className="absolute top-4 left-4 flex gap-2">
+                        {review.tags.map(tag => (
+                          <span key={tag} className="px-3 py-1 bg-black/40 backdrop-blur-md text-white text-[10px] font-bold rounded-full">
+                            #{tag}
+                          </span>
+                        ))}
+                      </div>
+                      <button 
+                        onClick={() => toggleFavorite(review.id)}
+                        className="absolute top-4 right-4 p-2.5 bg-white/90 backdrop-blur-md rounded-full shadow-sm hover:bg-white transition-colors"
+                      >
+                        <Heart className={`w-5 h-5 ${favorites.includes(review.id) ? 'fill-red-500 text-red-500' : 'text-slate-400'}`} />
+                      </button>
+                    </div>
+
+                    <div className="p-5">
+                      <div className="flex justify-between items-start mb-3">
+                        <div>
+                          <div className="flex items-center gap-1.5 text-blue-600 mb-1">
+                            <MapPin className="w-3.5 h-3.5" />
+                            <span className="text-xs font-black uppercase tracking-wider">{review.location}</span>
+                          </div>
+                          <h3 className="font-bold text-lg">{review.user}의 일기</h3>
+                        </div>
+                        <div className="flex items-center bg-yellow-50 px-2 py-1 rounded-lg">
+                          <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
+                          <span className="ml-1 text-sm font-bold text-yellow-700">{review.rating}</span>
+                        </div>
+                      </div>
+                      <p className="text-slate-500 text-sm leading-relaxed mb-4 line-clamp-2">
+                        {review.comment}
+                      </p>
+                      <div className="flex items-center gap-4 pt-4 border-t border-slate-50">
+                        <div className="flex items-center gap-1.5 text-slate-400">
+                          <Heart className="w-4 h-4" />
+                          <span className="text-xs font-bold">{review.likes + (favorites.includes(review.id) ? 1 : 0)}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5 text-slate-400">
+                          <MessageSquare className="w-4 h-4" />
+                          <span className="text-xs font-bold">{review.replies}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="py-20 text-center space-y-3">
+                  <ImageOff className="w-12 h-12 text-slate-200 mx-auto" />
+                  <p className="text-slate-400 font-medium">해당 태그의 리뷰가 아직 없어요!</p>
+                </div>
+              )}
+            </div>
           </div>
-          <button 
-            className="flex flex-col items-center gap-1 text-gray-400"
-          >
-            <Heart className="w-6 h-6" />
-            <span className="text-[10px] font-bold">찜</span>
+        )}
+      </main>
+
+      {/* 하단 네비게이션 */}
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-md h-16 bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20 px-8 flex items-center justify-between z-50">
+        <button 
+          onClick={() => setActiveTab('home')}
+          className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'home' ? 'text-blue-600 scale-110' : 'text-gray-400'}`}
+        >
+          <Home className="w-6 h-6" />
+          <span className="text-[10px] font-bold">홈</span>
+        </button>
+        <button 
+          onClick={() => setActiveTab('map')}
+          className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'map' ? 'text-blue-600 scale-110' : 'text-gray-400'}`}
+        >
+          <MapIcon className="w-6 h-6" />
+          <span className="text-[10px] font-bold">지도</span>
+        </button>
+        <div className="relative -top-8">
+          <button className="w-14 h-14 bg-blue-600 rounded-full shadow-lg shadow-blue-200 flex items-center justify-center text-white transform active:scale-95 transition-transform border-4 border-white">
+            <Plus className="w-8 h-8" />
           </button>
-          <button 
-            onClick={() => setActiveTab('profile')}
-            className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'profile' ? 'text-blue-600 scale-110' : 'text-gray-400'}`}
-          >
-            <User className="w-6 h-6" />
-            <span className="text-[10px] font-bold">마이</span>
-          </button>
-        </nav>
+        </div>
+        <button 
+          onClick={() => setActiveTab('favorites')}
+          className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'favorites' ? 'text-blue-600 scale-110' : 'text-gray-400'}`}
+        >
+          <Heart className="w-6 h-6" />
+          <span className="text-[10px] font-bold">찜</span>
+        </button>
+        <button 
+          onClick={() => setActiveTab('profile')}
+          className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'profile' ? 'text-blue-600 scale-110' : 'text-gray-400'}`}
+        >
+          <User className="w-6 h-6" />
+          <span className="text-[10px] font-bold">마이</span>
+        </button>
       </div>
 
       <style>{`
-        .no-scrollbar::-webkit-scrollbar {
-          display: none;
-        }
-        .no-scrollbar {
-          -ms-overflow-style: none;
-          scrollbar-width: none;
-        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         @keyframes fade-in {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes slide-in-from-bottom-4 {
-          from { transform: translateY(1rem); }
-          to { transform: translateY(0); }
-        }
-        .animate-in {
-          animation: fade-in 0.3s ease-out, slide-in-from-bottom-4 0.3s ease-out;
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
         }
       `}</style>
     </div>
   );
-};
-
-export default App;
+}
