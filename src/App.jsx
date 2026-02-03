@@ -74,28 +74,33 @@ const SafeImage = ({ src, alt, className }) => {
   );
 };
 
-// Kakao Maps SDK 동적 로더
+// Kakao Maps SDK 동적 로더 (kakao.maps.load 콜백으로 LatLng 등 API 준비 완료 후 resolve)
 function loadKakaoMap(appkey) {
   return new Promise((resolve, reject) => {
-    if (window.kakao && window.kakao.maps) return resolve(window.kakao);
+    const initMap = () => {
+      if (window.kakao?.maps?.LatLng) return resolve(window.kakao);
+      if (window.kakao?.maps?.load) {
+        window.kakao.maps.load(() => resolve(window.kakao));
+        return;
+      }
+      reject(new Error('kakao.maps not available'));
+    };
+
+    if (window.kakao?.maps?.LatLng) return resolve(window.kakao);
+    if (window.kakao?.maps?.load) {
+      window.kakao.maps.load(() => resolve(window.kakao));
+      return;
+    }
+
     const script = document.createElement('script');
-    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${appkey}&autoload=true`;
+    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${appkey}&autoload=false`;
     script.async = true;
     script.onload = () => {
-      if (window.kakao && window.kakao.maps) return resolve(window.kakao);
-      // fallback: wait a short time for the kakao.maps namespace to become available
-      let attempts = 0;
-      const timer = setInterval(() => {
-        attempts += 1;
-        if (window.kakao && window.kakao.maps) {
-          clearInterval(timer);
-          return resolve(window.kakao);
-        }
-        if (attempts > 10) {
-          clearInterval(timer);
-          return reject(new Error('kakao.maps not available after script load'));
-        }
-      }, 200);
+      if (window.kakao?.maps?.load) {
+        window.kakao.maps.load(() => resolve(window.kakao));
+      } else {
+        initMap();
+      }
     };
     script.onerror = (err) => reject(err);
     document.head.appendChild(script);
@@ -239,7 +244,7 @@ const App = () => {
     }, [selectedAddress, applyFilter]);
 
     useEffect(() => {
-      const APP_KEY = '0c9feebe33a63b61c3364f8b447bf13a';
+      const APP_KEY = 'cf864dc2f0d80f5ca499d30ea483efd6';
       const csvFile = '/제주특별자치도_무장애여행정보_12-법환포구_20201222.csv';
       let mounted = true;
 
