@@ -74,13 +74,14 @@ const SafeImage = ({ src, alt, className }) => {
   );
 };
 
-// 지역별 CSV 목록 (위도,경도,장소명칭,장소상세정보,무장애관광정보,추천코스여부,데이터품질점검결과,데이터기준일자)
+// 지역별 CSV 목록 - ASCII 파일명 사용 (macOS/Windows/Linux 호환)
+// (위도,경도,장소명칭,장소상세정보,무장애관광정보,추천코스여부,데이터품질점검결과,데이터기준일자)
 const REGIONS = [
-  { value: '12-법환포구', label: '법환포구', file: '/제주특별자치도_무장애여행정보_12-법환포구_20201222.csv' },
-  { value: '14-토끼섬과하도포구', label: '토끼섬과하도포구', file: '/제주특별자치도_무장애여행정보_14-토끼섬과하도포구_20201222.csv' },
-  { value: '35-해녀박물관', label: '해녀박물관', file: '/제주특별자치도_무장애여행정보_35-해녀박물관_20201222.csv' },
-  { value: '49-동문시장', label: '동문시장', file: '/제주특별자치도_무장애여행정보_49-동문시장_20201222.csv' },
-  { value: '50-제주도립미술관', label: '제주도립미술관', file: '/제주특별자치도_무장애여행정보_50-제주도립미술관_20201222.csv' },
+  { value: '12-법환포구', label: '법환포구', file: '/region_12.csv' },
+  { value: '14-토끼섬과하도포구', label: '토끼섬과하도포구', file: '/region_14.csv' },
+  { value: '35-해녀박물관', label: '해녀박물관', file: '/region_35.csv' },
+  { value: '49-동문시장', label: '동문시장', file: '/region_49.csv' },
+  { value: '50-제주도립미술관', label: '제주도립미술관', file: '/region_50.csv' },
 ];
 
 // Kakao Maps SDK 동적 로더 (kakao.maps.load 콜백으로 LatLng 등 API 준비 완료 후 resolve)
