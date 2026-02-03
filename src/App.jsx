@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Map as MapIcon, Star, Heart, MessageSquare, User, Home, MapPin, ChevronRight, ChevronDown, Filter, ImageOff, Plus, Minus, Navigation } from 'lucide-react';
 
-// 제주도 특화 Mock Data
+// 제주도 특화 Mock Data (tags 데이터 추가 버전)
 const REVIEWS = [
   {
     id: 1,
@@ -12,67 +12,47 @@ const REVIEWS = [
     image: "https://images.unsplash.com/photo-1549693578-d683be217e58?q=80&w=1000&auto=format&fit=crop",
     likes: 342,
     replies: 45,
-    coords: { x: 85, y: 45 } // 지도상 위치 (백분율)
+    tags: ["바다뷰", "일출맛집"],
+    coords: { x: 85, y: 45 }
   },
   {
     id: 2,
     user: "바다아이",
     location: "제주시 협재 해수욕장",
     rating: 4.7,
-    comment: "비양도가 손에 잡힐 듯 보이는 에메랄드빛 바다는 언제 봐도 감동적이에요. 투명한 물속으로 물고기들이 보일 정도로 깨끗하고, 주변에 예쁜 카페들이 많아 하루 종일 머물기 좋습니다. 특히 일몰 시간에 방문하시는 것을 강력 추천드려요!",
-    image: "https://images.unsplash.com/photo-1621274220348-4122ec030991?q=80&w=1000&auto=format&fit=crop",
-    likes: 528,
-    replies: 84,
-    coords: { x: 15, y: 40 }
+    comment: "비양도가 손에 잡힐 듯 보이는 에메랄드빛 바다는 언제 봐도 감동적이에요. 주변에 예쁜 카페들이 많아 좋습니다.",
+    image: "https://images.unsplash.com/photo-1515238152791-8216bfdf89a7?q=80&w=1000&auto=format&fit=crop",
+    likes: 215,
+    replies: 12,
+    tags: ["바다뷰", "주차가능", "반려동물동반"],
+    coords: { x: 25, y: 35 }
   },
   {
     id: 3,
-    user: "숲속산책",
-    location: "제주시 사려니숲길",
+    user: "고기러버",
+    location: "칠돈가",
     rating: 4.8,
-    comment: "안개 낀 날 방문했는데 몽환적인 분위기가 정말 최고였어요. 삼나무 향기를 맡으며 걷는 것만으로도 힐링이 됩니다.",
-    image: "https://images.unsplash.com/photo-1511497584788-876760111969?q=80&w=1000&auto=format&fit=crop",
+    comment: "제주도 하면 흑돼지, 흑돼지 하면 칠돈가죠! 육즙이 살아있고 직원분들이 직접 구워주셔서 정말 편해요.",
+    image: "https://images.unsplash.com/photo-1544025162-d76694265947?q=80&w=1000&auto=format&fit=crop",
     likes: 189,
-    replies: 22,
-    coords: { x: 55, y: 50 }
-  },
-  {
-    id: 4,
-    user: "감귤러버",
-    location: "서귀포 카멜리아 힐",
-    rating: 4.6,
-    comment: "계절마다 다른 꽃들이 반겨주는 곳이에요. 겨울에 피는 동백꽃은 정말 사진 찍기 최고의 스팟입니다.",
-    image: "https://images.unsplash.com/photo-1490750967868-88aa4486c946?q=80&w=1000&auto=format&fit=crop",
-    likes: 156,
-    replies: 10,
-    coords: { x: 30, y: 75 }
+    replies: 28,
+    tags: ["주차가능"], // 직접 추가하신 부분 반영!
+    coords: { x: 45, y: 40 }
   }
 ];
 
-const CATEGORIES = ["전체", "해변", "오름/숲", "맛집", "카페", "테마파크"];
+export default function App() {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeTab, setActiveTab] = useState('home');
+  const [selectedTag, setSelectedTag] = useState('전체'); // 현재 선택된 필터 태그
+  const [favorites, setFavorites] = useState([]); // 찜 목록 상태
 
-// 이미지 로딩 실패 처리를 위한 컴포넌트
-const SafeImage = ({ src, alt, className }) => {
-  const [error, setError] = useState(false);
-
-  if (error) {
-    return (
-      <div className={`${className} bg-gray-100 flex flex-col items-center justify-center text-gray-400 gap-2`}>
-        <ImageOff className="w-10 h-10 opacity-50" />
-        <span className="text-[10px]">이미지 없음</span>
-      </div>
+  // 찜하기 토글 함수
+  const toggleFavorite = (id) => {
+    setFavorites(prev => 
+      prev.includes(id) ? prev.filter(favId => favId !== id) : [...prev, id]
     );
-  }
-
-  return (
-    <img 
-      src={src} 
-      alt={alt} 
-      className={className} 
-      onError={() => setError(true)} 
-    />
-  );
-};
+  };
 
 // 지역별 CSV 목록 - ASCII 파일명 사용 (macOS/Windows/Linux 호환)
 // (위도,경도,장소명칭,장소상세정보,무장애관광정보,추천코스여부,데이터품질점검결과,데이터기준일자)
@@ -115,61 +95,42 @@ function loadKakaoMap(appkey) {
     script.onerror = (err) => reject(err);
     document.head.appendChild(script);
   });
-}
+  return (
+    <div className="flex flex-col h-full bg-slate-50 font-sans text-slate-900 overflow-hidden">
+      {/* 상단 헤더 */}
+      <header className="px-6 py-4 bg-white flex items-center justify-between border-b border-slate-100 shrink-0">
+        <h1 className="text-2xl font-black tracking-tight text-blue-600">Jeju Reviews</h1>
+        <button className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors">
+          <Search className="w-5 h-5 text-slate-600" />
+        </button>
+      </header>
 
-const App = () => {
-  const [activeTab, setActiveTab] = useState('home');
-  const [selectedCategory, setSelectedCategory] = useState("전체");
-  const [selectedPlace, setSelectedPlace] = useState(null);
-
-  // 메인 피드 컴포넌트
-  const HomeView = () => (
-    <div className="pb-24">
-      {/* Search Header */}
-      <div className="sticky top-0 bg-white z-10 p-4 border-b">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-          <input 
-            type="text" 
-            placeholder="제주의 어디로 떠나고 싶으신가요?" 
-            className="w-full bg-gray-100 rounded-full py-3 pl-10 pr-4 focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-          />
-        </div>
-      </div>
-
-      {/* Categories */}
-      <div className="flex overflow-x-auto p-4 gap-2 no-scrollbar">
-        {CATEGORIES.map((cat) => (
+      {/* 필터 탭 영역 (3단계) */}
+      <div className="bg-white px-4 py-3 flex gap-2 overflow-x-auto no-scrollbar border-b border-slate-100 shrink-0">
+        {tags.map((tag) => (
           <button
-            key={cat}
-            onClick={() => setSelectedCategory(cat)}
-            className={`px-4 py-1.5 rounded-full text-sm whitespace-nowrap transition-colors ${
-              selectedCategory === cat ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-            }`}
+            key={tag}
+            onClick={() => setSelectedTag(tag)}
+            className={`px-4 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-all
+              ${selectedTag === tag 
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-100 scale-105' 
+                : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
           >
-            {cat}
+            {tag === '전체' ? tag : `#${tag}`}
           </button>
         ))}
       </div>
 
-      {/* Review Feed */}
-      <div className="px-4 space-y-6">
-        <div className="flex justify-between items-end">
-          <h2 className="text-xl font-bold text-gray-800">지금 뜨는 제주 리뷰</h2>
-          <span className="text-xs text-blue-600 font-medium cursor-pointer">더보기</span>
-        </div>
-        
-        {REVIEWS.map((review) => (
-          <div key={review.id} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
-            <div className="relative h-64">
-              <SafeImage src={review.image} alt={review.location} className="w-full h-full object-cover" />
-              <button className="absolute top-4 right-4 p-2 bg-black/20 backdrop-blur-md rounded-full text-white hover:bg-black/40 transition-colors">
-                <Heart className="w-5 h-5" />
-              </button>
-              <div className="absolute bottom-4 left-4 flex items-center bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg shadow-sm">
-                <Star className="w-3.5 h-3.5 text-yellow-500 fill-yellow-500 mr-1" />
-                <span className="text-xs font-bold text-gray-800">{review.rating}</span>
-              </div>
+      {/* 메인 콘텐츠 영역 */}
+      <main className="flex-1 overflow-y-auto no-scrollbar pb-24">
+        {activeTab === 'home' && (
+          <div className="p-4 space-y-6 animate-[fade-in_0.4s_ease-out]">
+            <div className="flex items-center justify-between px-2">
+              <h2 className="text-lg font-bold flex items-center gap-2">
+                <Star className="w-5 h-5 text-yellow-400 fill-yellow-400" />
+                {selectedTag === '전체' ? '지금 뜨는 리뷰' : `${selectedTag} 추천 장소`}
+              </h2>
+              <span className="text-xs font-bold text-slate-400">전체보기</span>
             </div>
             <div className="p-4">
               <div className="flex justify-between items-start mb-2">
@@ -477,44 +438,54 @@ const App = () => {
               <span className="text-3xl font-light">+</span>
             </button>
           </div>
-          <button 
-            className="flex flex-col items-center gap-1 text-gray-400"
-          >
-            <Heart className="w-6 h-6" />
-            <span className="text-[10px] font-bold">찜</span>
+        )}
+      </main>
+
+      {/* 하단 네비게이션 */}
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-md h-16 bg-white/90 backdrop-blur-xl rounded-2xl shadow-2xl border border-white/20 px-8 flex items-center justify-between z-50">
+        <button 
+          onClick={() => setActiveTab('home')}
+          className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'home' ? 'text-blue-600 scale-110' : 'text-gray-400'}`}
+        >
+          <Home className="w-6 h-6" />
+          <span className="text-[10px] font-bold">홈</span>
+        </button>
+        <button 
+          onClick={() => setActiveTab('map')}
+          className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'map' ? 'text-blue-600 scale-110' : 'text-gray-400'}`}
+        >
+          <MapIcon className="w-6 h-6" />
+          <span className="text-[10px] font-bold">지도</span>
+        </button>
+        <div className="relative -top-8">
+          <button className="w-14 h-14 bg-blue-600 rounded-full shadow-lg shadow-blue-200 flex items-center justify-center text-white transform active:scale-95 transition-transform border-4 border-white">
+            <Plus className="w-8 h-8" />
           </button>
-          <button 
-            onClick={() => setActiveTab('profile')}
-            className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'profile' ? 'text-blue-600 scale-110' : 'text-gray-400'}`}
-          >
-            <User className="w-6 h-6" />
-            <span className="text-[10px] font-bold">마이</span>
-          </button>
-        </nav>
+        </div>
+        <button 
+          onClick={() => setActiveTab('favorites')}
+          className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'favorites' ? 'text-blue-600 scale-110' : 'text-gray-400'}`}
+        >
+          <Heart className="w-6 h-6" />
+          <span className="text-[10px] font-bold">찜</span>
+        </button>
+        <button 
+          onClick={() => setActiveTab('profile')}
+          className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'profile' ? 'text-blue-600 scale-110' : 'text-gray-400'}`}
+        >
+          <User className="w-6 h-6" />
+          <span className="text-[10px] font-bold">마이</span>
+        </button>
       </div>
 
       <style>{`
-        .no-scrollbar::-webkit-scrollbar {
-          display: none;
-        }
-        .no-scrollbar {
-          -ms-overflow-style: none;
-          scrollbar-width: none;
-        }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         @keyframes fade-in {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes slide-in-from-bottom-4 {
-          from { transform: translateY(1rem); }
-          to { transform: translateY(0); }
-        }
-        .animate-in {
-          animation: fade-in 0.3s ease-out, slide-in-from-bottom-4 0.3s ease-out;
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
         }
       `}</style>
     </div>
   );
-};
-
-export default App;
+}
