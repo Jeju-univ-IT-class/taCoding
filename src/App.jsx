@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, Map as MapIcon, Star, Heart, MessageSquare, User, Home, MapPin, ChevronRight, Filter, ImageOff, Plus, Minus, Navigation } from 'lucide-react';
 
 // 제주도 특화 Mock Data
@@ -189,70 +189,217 @@ const App = () => {
     </div>
   );
 
-  // 지도 뷰 (Kakao Maps 연동)
+  // 지도 뷰 (Kakao Maps + 무장애여행 CSV 연동)
   const MapView = () => {
     const mapRef = useRef(null);
+    const [addressOptions, setAddressOptions] = useState([]);
+    const [selectedAddress, setSelectedAddress] = useState('');
+    const allMarkersRef = useRef([]);
+    const currentInfoCardRef = useRef(null);
+    const mapInstanceRef = useRef(null);
+
+    const getRoadGroup = (roadAddress) => {
+      if (!roadAddress) return '주소없음';
+      const parts = roadAddress.split(' ');
+      let areaToken = '';
+      let roadToken = '';
+      for (let i = 0; i < parts.length; i++) {
+        const token = parts[i].trim();
+        if (!areaToken && (token.endsWith('시') || token.endsWith('동'))) areaToken = token;
+        if (!roadToken && (token.endsWith('로') || token.endsWith('길'))) roadToken = token;
+      }
+      if (!roadToken) return '주소없음';
+      return areaToken ? areaToken + ' ' + roadToken : roadToken;
+    };
+
+    const setMarkerVisibility = (item, visible) => {
+      const map = mapInstanceRef.current;
+      if (!map) return;
+      item.marker.setMap(visible ? map : null);
+      item.labelOverlay.setMap(visible ? map : null);
+      if (!visible) {
+        item.infoCardOverlay.setMap(null);
+        if (currentInfoCardRef.current === item.infoCardOverlay) currentInfoCardRef.current = null;
+      }
+    };
+
+    const applyFilter = useCallback(() => {
+      const allMarkers = allMarkersRef.current;
+      const map = mapInstanceRef.current;
+      if (!map || !allMarkers.length) return;
+      if (!selectedAddress) {
+        allMarkers.forEach((item) => setMarkerVisibility(item, true));
+        return;
+      }
+      allMarkers.forEach((item) => setMarkerVisibility(item, item.roadGroup === selectedAddress));
+    }, [selectedAddress]);
+
+    useEffect(() => {
+      applyFilter();
+    }, [selectedAddress, applyFilter]);
 
     useEffect(() => {
       const APP_KEY = '0c9feebe33a63b61c3364f8b447bf13a';
-      let kakaoMap = null;
-      let markers = [];
+      const csvFile = '/제주특별자치도_무장애여행정보_12-법환포구_20201222.csv';
       let mounted = true;
 
       loadKakaoMap(APP_KEY).then((kakao) => {
         if (!mounted) return;
         const container = mapRef.current;
         if (!container) return;
-        const center = new kakao.maps.LatLng(33.4996, 126.5312);
-        kakaoMap = new kakao.maps.Map(container, { center, level: 9 });
 
-        // 중앙 마커
-        const centerMarker = new kakao.maps.Marker({ position: center });
-        centerMarker.setMap(kakaoMap);
-        markers.push(centerMarker);
+        const options = {
+          center: new kakao.maps.LatLng(33.450701, 126.570667),
+          level: 3
+        };
+        const map = new kakao.maps.Map(container, options);
+        mapInstanceRef.current = map;
 
-        // REVIEWS 기반 간단한 마커 배치 (데모용 약간 위치 보정)
-        REVIEWS.forEach((r, i) => {
-          const lat = 33.4996 + (i - 1.5) * 0.02;
-          const lng = 126.5312 + (i - 1.5) * 0.02;
-          const marker = new kakao.maps.Marker({ position: new kakao.maps.LatLng(lat, lng) });
-          marker.setMap(kakaoMap);
-          markers.push(marker);
-        });
-      }).catch((e) => {
-        console.error('Kakao Maps 로드 실패', e);
-      });
+        const customMarkerImage = {
+          url: 'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/marker_red.png',
+          size: new kakao.maps.Size(64, 69),
+          offset: new kakao.maps.Point(27, 69)
+        };
+
+        const createMarkerWithLabel = (position, placeInfo) => {
+          const name = placeInfo.name;
+          const markerOption = { position };
+          if (customMarkerImage?.url) {
+            const markerImage = new kakao.maps.MarkerImage(
+              customMarkerImage.url, customMarkerImage.size, { offset: customMarkerImage.offset }
+            );
+            markerOption.image = markerImage;
+          }
+          const marker = new kakao.maps.Marker(markerOption);
+          marker.setMap(map);
+
+          const overlayContent = '<div style="padding:5px 10px;background:#fff;border:1px solid #ddd;border-radius:4px;font-size:12px;white-space:nowrap;margin-top:8px;">' + name + '</div>';
+          const customOverlay = new kakao.maps.CustomOverlay({ position, content: overlayContent, yAnchor: 0 });
+          customOverlay.setMap(map);
+
+          const cardHtml = '<div class="info-card" style="min-width:180px;max-width:260px;padding:12px 14px;background:#fff;border:1px solid #e0e0e0;border-radius:8px;font-size:12px;line-height:1.5;box-shadow:0 2px 8px rgba(0,0,0,0.12);">' +
+            '<div style="font-weight:700;margin-bottom:8px;font-size:13px;color:#333;">' + (placeInfo.name || '-') + '</div>' +
+            (placeInfo.roadAddress ? '<div style="color:#666;margin-bottom:4px;">도로명 ' + placeInfo.roadAddress + '</div>' : '') +
+            (placeInfo.jibunAddress ? '<div style="color:#666;margin-bottom:4px;">지번 ' + placeInfo.jibunAddress + '</div>' : '') +
+            (placeInfo.modifiedAt ? '<div style="color:#888;font-size:11px;">수정일시 ' + placeInfo.modifiedAt + '</div>' : '') +
+            '</div>';
+
+          const infoCardOverlay = new kakao.maps.CustomOverlay({ position, content: cardHtml, yAnchor: 1.2, xAnchor: 0.5 });
+
+          kakao.maps.event.addListener(marker, 'mouseover', () => {
+            if (currentInfoCardRef.current) currentInfoCardRef.current.setMap(null);
+            infoCardOverlay.setMap(map);
+            currentInfoCardRef.current = infoCardOverlay;
+          });
+          kakao.maps.event.addListener(marker, 'mouseout', () => {
+            infoCardOverlay.setMap(null);
+            if (currentInfoCardRef.current === infoCardOverlay) currentInfoCardRef.current = null;
+          });
+
+          return { marker, labelOverlay: customOverlay, infoCardOverlay, roadGroup: placeInfo.roadGroup, position };
+        };
+
+        fetch(encodeURI(csvFile))
+          .then((res) => res.arrayBuffer())
+          .then((buffer) => {
+            if (!mounted || !mapInstanceRef.current) return;
+            const decoder = new TextDecoder('euc-kr');
+            const text = decoder.decode(buffer);
+            const rows = text.trim().split(/\r?\n/);
+            rows.shift();
+
+            const addressSet = new Set();
+            const allMarkers = [];
+
+            rows.forEach((line, index) => {
+              if (!line.trim()) return;
+              const cols = line.split(',');
+              const lat = parseFloat(cols[0]);
+              const lng = parseFloat(cols[1]);
+              const name = (cols[2] || '').trim();
+              const roadAddress = ((cols[3] || '').trim() + ' ' + (cols[4] || '').trim()).trim();
+              const modifiedAt = (cols[7] || '').trim();
+              const jibunAddress = (cols[6] || '').trim();
+
+              if (Number.isNaN(lat) || Number.isNaN(lng)) return;
+
+              const position = new kakao.maps.LatLng(lat, lng);
+              const roadGroup = getRoadGroup(roadAddress);
+              const placeInfo = { name, roadAddress, jibunAddress, modifiedAt, roadGroup };
+              addressSet.add(roadGroup);
+
+              if (index === 0) map.setCenter(position);
+
+              const markerItem = createMarkerWithLabel(position, placeInfo);
+              allMarkers.push(markerItem);
+            });
+
+            allMarkersRef.current = allMarkers;
+            setAddressOptions(Array.from(addressSet).sort());
+            applyFilter();
+          })
+          .catch((err) => console.error('CSV 로딩 실패:', err));
+      }).catch((e) => console.error('Kakao Maps 로드 실패', e));
 
       return () => {
         mounted = false;
-        if (markers.length) markers.forEach((m) => m.setMap(null));
+        allMarkersRef.current.forEach((item) => {
+          item.marker.setMap(null);
+          item.labelOverlay.setMap(null);
+          item.infoCardOverlay.setMap(null);
+        });
+        allMarkersRef.current = [];
+        mapInstanceRef.current = null;
       };
     }, []);
 
+    const handleFilterChange = (e) => {
+      const value = e.target.value;
+      setSelectedAddress(value);
+      if (value) {
+        const target = allMarkersRef.current.find((item) => item.roadGroup === value);
+        if (target && mapInstanceRef.current) {
+          mapInstanceRef.current.panTo(target.position);
+        }
+      }
+    };
+
     return (
       <div className="h-full flex flex-col">
-        <div className="p-4 bg-white border-b flex justify-between items-center z-10">
-        <div className="flex-1 mr-4">
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <input 
-              type="text" 
-              placeholder="주변 명소 검색" 
-              className="w-full bg-gray-100 rounded-lg py-2 pl-9 pr-4 text-xs focus:outline-none"
-            />
+        <div className="p-4 bg-white border-b z-10 space-y-2">
+          <div className="flex justify-between items-center gap-2">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <input 
+                type="text" 
+                placeholder="주변 명소 검색" 
+                className="w-full bg-gray-100 rounded-lg py-2 pl-9 pr-4 text-xs focus:outline-none"
+              />
+            </div>
+            <button className="p-2 bg-gray-100 rounded-lg flex-shrink-0">
+              <Filter className="w-4 h-4 text-gray-600" />
+            </button>
+          </div>
+          <div>
+            <label htmlFor="filterSelect" className="block text-xs text-gray-600 mb-1">주소 필터</label>
+            <select 
+              id="filterSelect" 
+              value={selectedAddress}
+              onChange={handleFilterChange}
+              className="w-full max-w-full p-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="">전체</option>
+              {addressOptions.map((addr) => (
+                <option key={addr} value={addr}>{addr}</option>
+              ))}
+            </select>
           </div>
         </div>
-        <button className="p-2 bg-gray-100 rounded-lg">
-          <Filter className="w-4 h-4 text-gray-600" />
-        </button>
-      </div>
-      
-        {/* Map container */}
+
         <div className="flex-1 relative overflow-hidden" onClick={() => setSelectedPlace(null)}>
           <div ref={mapRef} className="absolute inset-0" style={{ minHeight: 300 }} />
 
-          {/* Map Controls (UI only) */}
-          <div className="absolute bottom-32 right-4 flex flex-col gap-2">
+          <div className="absolute bottom-8 right-4 flex flex-col gap-2">
             <button className="w-10 h-10 bg-white rounded-lg shadow-md flex items-center justify-center text-gray-600 active:bg-gray-50">
               <Navigation className="w-5 h-5" />
             </button>
@@ -265,34 +412,6 @@ const App = () => {
               </button>
             </div>
           </div>
-
-          {/* Selected Place Overlay Card (kept for UX parity) */}
-          {selectedPlace && (
-            <div className="absolute bottom-6 left-4 right-4 z-40 animate-in fade-in slide-in-from-bottom-4 duration-300">
-              <div className="bg-white rounded-2xl shadow-2xl p-3 flex gap-4 border border-blue-50">
-                <div className="w-24 h-24 rounded-xl overflow-hidden flex-shrink-0">
-                  <SafeImage src={selectedPlace.image} alt="" className="w-full h-full object-cover" />
-                </div>
-                <div className="flex-1 flex flex-col justify-between py-1">
-                  <div>
-                    <h4 className="font-bold text-gray-800 text-sm">{selectedPlace.location}</h4>
-                    <div className="flex items-center mt-1">
-                      <Star className="w-3 h-3 text-yellow-500 fill-yellow-500 mr-1" />
-                      <span className="text-xs font-bold text-gray-700">{selectedPlace.rating}</span>
-                      <span className="mx-1 text-gray-300 text-[10px]">•</span>
-                      <span className="text-[10px] text-gray-500">리뷰 {selectedPlace.replies}</span>
-                    </div>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-[10px] text-blue-600 font-semibold">{selectedPlace.user}님의 추천</span>
-                    <button className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[10px] font-bold">
-                      상세보기
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
       </div>
     );
