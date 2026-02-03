@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, Map as MapIcon, Star, Heart, MessageSquare, User, Home, MapPin, ChevronRight, Filter, ImageOff, Plus, Minus, Navigation } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Search, Map as MapIcon, Star, Heart, MessageSquare, User, Home, MapPin, ChevronRight, ChevronDown, Filter, ImageOff, Plus, Minus, Navigation } from 'lucide-react';
 
 // 제주도 특화 Mock Data
 const REVIEWS = [
@@ -73,6 +73,15 @@ const SafeImage = ({ src, alt, className }) => {
     />
   );
 };
+
+// 지역별 CSV 목록 (위도,경도,장소명칭,장소상세정보,무장애관광정보,추천코스여부,데이터품질점검결과,데이터기준일자)
+const REGIONS = [
+  { value: '12-법환포구', label: '법환포구', file: '/제주특별자치도_무장애여행정보_12-법환포구_20201222.csv' },
+  { value: '14-토끼섬과하도포구', label: '토끼섬과하도포구', file: '/제주특별자치도_무장애여행정보_14-토끼섬과하도포구_20201222.csv' },
+  { value: '35-해녀박물관', label: '해녀박물관', file: '/제주특별자치도_무장애여행정보_35-해녀박물관_20201222.csv' },
+  { value: '49-동문시장', label: '동문시장', file: '/제주특별자치도_무장애여행정보_49-동문시장_20201222.csv' },
+  { value: '50-제주도립미술관', label: '제주도립미술관', file: '/제주특별자치도_무장애여행정보_50-제주도립미술관_20201222.csv' },
+];
 
 // Kakao Maps SDK 동적 로더 (kakao.maps.load 콜백으로 LatLng 등 API 준비 완료 후 resolve)
 function loadKakaoMap(appkey) {
@@ -197,55 +206,17 @@ const App = () => {
   // 지도 뷰 (Kakao Maps + 무장애여행 CSV 연동)
   const MapView = () => {
     const mapRef = useRef(null);
-    const [addressOptions, setAddressOptions] = useState([]);
-    const [selectedAddress, setSelectedAddress] = useState('');
     const allMarkersRef = useRef([]);
     const currentInfoCardRef = useRef(null);
     const mapInstanceRef = useRef(null);
+    const kakaoRef = useRef(null);
+    const [selectedRegion, setSelectedRegion] = useState(REGIONS[0].value);
+    const [mapReady, setMapReady] = useState(false);
+    const [dropdownOpen, setDropdownOpen] = useState(false);
 
-    const getRoadGroup = (roadAddress) => {
-      if (!roadAddress) return '주소없음';
-      const parts = roadAddress.split(' ');
-      let areaToken = '';
-      let roadToken = '';
-      for (let i = 0; i < parts.length; i++) {
-        const token = parts[i].trim();
-        if (!areaToken && (token.endsWith('시') || token.endsWith('동'))) areaToken = token;
-        if (!roadToken && (token.endsWith('로') || token.endsWith('길'))) roadToken = token;
-      }
-      if (!roadToken) return '주소없음';
-      return areaToken ? areaToken + ' ' + roadToken : roadToken;
-    };
-
-    const setMarkerVisibility = (item, visible) => {
-      const map = mapInstanceRef.current;
-      if (!map) return;
-      item.marker.setMap(visible ? map : null);
-      item.labelOverlay.setMap(visible ? map : null);
-      if (!visible) {
-        item.infoCardOverlay.setMap(null);
-        if (currentInfoCardRef.current === item.infoCardOverlay) currentInfoCardRef.current = null;
-      }
-    };
-
-    const applyFilter = useCallback(() => {
-      const allMarkers = allMarkersRef.current;
-      const map = mapInstanceRef.current;
-      if (!map || !allMarkers.length) return;
-      if (!selectedAddress) {
-        allMarkers.forEach((item) => setMarkerVisibility(item, true));
-        return;
-      }
-      allMarkers.forEach((item) => setMarkerVisibility(item, item.roadGroup === selectedAddress));
-    }, [selectedAddress]);
-
-    useEffect(() => {
-      applyFilter();
-    }, [selectedAddress, applyFilter]);
-
+    // 지도 초기화 (1회)
     useEffect(() => {
       const APP_KEY = 'cf864dc2f0d80f5ca499d30ea483efd6';
-      const csvFile = '/제주특별자치도_무장애여행정보_12-법환포구_20201222.csv';
       let mounted = true;
 
       loadKakaoMap(APP_KEY).then((kakao) => {
@@ -253,97 +224,17 @@ const App = () => {
         const container = mapRef.current;
         if (!container) return;
 
+        kakaoRef.current = kakao;
         const options = {
           center: new kakao.maps.LatLng(33.450701, 126.570667),
           level: 3
         };
         const map = new kakao.maps.Map(container, options);
         mapInstanceRef.current = map;
-
-        const customMarkerImage = {
-          url: 'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/marker_red.png',
-          size: new kakao.maps.Size(64, 69),
-          offset: new kakao.maps.Point(27, 69)
-        };
-
-        const createMarkerWithLabel = (position, placeInfo) => {
-          const name = placeInfo.name;
-          const markerOption = { position };
-          if (customMarkerImage?.url) {
-            const markerImage = new kakao.maps.MarkerImage(
-              customMarkerImage.url, customMarkerImage.size, { offset: customMarkerImage.offset }
-            );
-            markerOption.image = markerImage;
-          }
-          const marker = new kakao.maps.Marker(markerOption);
-          marker.setMap(map);
-
-          const overlayContent = '<div style="padding:5px 10px;background:#fff;border:1px solid #ddd;border-radius:4px;font-size:12px;white-space:nowrap;margin-top:8px;">' + name + '</div>';
-          const customOverlay = new kakao.maps.CustomOverlay({ position, content: overlayContent, yAnchor: 0 });
-          customOverlay.setMap(map);
-
-          const cardHtml = '<div class="info-card" style="min-width:180px;max-width:260px;padding:12px 14px;background:#fff;border:1px solid #e0e0e0;border-radius:8px;font-size:12px;line-height:1.5;box-shadow:0 2px 8px rgba(0,0,0,0.12);">' +
-            '<div style="font-weight:700;margin-bottom:8px;font-size:13px;color:#333;">' + (placeInfo.name || '-') + '</div>' +
-            (placeInfo.roadAddress ? '<div style="color:#666;margin-bottom:4px;">도로명 ' + placeInfo.roadAddress + '</div>' : '') +
-            (placeInfo.jibunAddress ? '<div style="color:#666;margin-bottom:4px;">지번 ' + placeInfo.jibunAddress + '</div>' : '') +
-            (placeInfo.modifiedAt ? '<div style="color:#888;font-size:11px;">수정일시 ' + placeInfo.modifiedAt + '</div>' : '') +
-            '</div>';
-
-          const infoCardOverlay = new kakao.maps.CustomOverlay({ position, content: cardHtml, yAnchor: 1.2, xAnchor: 0.5 });
-
-          kakao.maps.event.addListener(marker, 'mouseover', () => {
-            if (currentInfoCardRef.current) currentInfoCardRef.current.setMap(null);
-            infoCardOverlay.setMap(map);
-            currentInfoCardRef.current = infoCardOverlay;
-          });
-          kakao.maps.event.addListener(marker, 'mouseout', () => {
-            infoCardOverlay.setMap(null);
-            if (currentInfoCardRef.current === infoCardOverlay) currentInfoCardRef.current = null;
-          });
-
-          return { marker, labelOverlay: customOverlay, infoCardOverlay, roadGroup: placeInfo.roadGroup, position };
-        };
-
-        fetch(encodeURI(csvFile))
-          .then((res) => res.arrayBuffer())
-          .then((buffer) => {
-            if (!mounted || !mapInstanceRef.current) return;
-            const decoder = new TextDecoder('euc-kr');
-            const text = decoder.decode(buffer);
-            const rows = text.trim().split(/\r?\n/);
-            rows.shift();
-
-            const addressSet = new Set();
-            const allMarkers = [];
-
-            rows.forEach((line, index) => {
-              if (!line.trim()) return;
-              const cols = line.split(',');
-              const lat = parseFloat(cols[0]);
-              const lng = parseFloat(cols[1]);
-              const name = (cols[2] || '').trim();
-              const roadAddress = ((cols[3] || '').trim() + ' ' + (cols[4] || '').trim()).trim();
-              const modifiedAt = (cols[7] || '').trim();
-              const jibunAddress = (cols[6] || '').trim();
-
-              if (Number.isNaN(lat) || Number.isNaN(lng)) return;
-
-              const position = new kakao.maps.LatLng(lat, lng);
-              const roadGroup = getRoadGroup(roadAddress);
-              const placeInfo = { name, roadAddress, jibunAddress, modifiedAt, roadGroup };
-              addressSet.add(roadGroup);
-
-              if (index === 0) map.setCenter(position);
-
-              const markerItem = createMarkerWithLabel(position, placeInfo);
-              allMarkers.push(markerItem);
-            });
-
-            allMarkersRef.current = allMarkers;
-            setAddressOptions(Array.from(addressSet).sort());
-            applyFilter();
-          })
-          .catch((err) => console.error('CSV 로딩 실패:', err));
+        requestAnimationFrame(() => {
+          if (map.relayout) map.relayout();
+          setMapReady(true);
+        });
       }).catch((e) => console.error('Kakao Maps 로드 실패', e));
 
       return () => {
@@ -355,23 +246,128 @@ const App = () => {
         });
         allMarkersRef.current = [];
         mapInstanceRef.current = null;
+        kakaoRef.current = null;
       };
     }, []);
 
-    const handleFilterChange = (e) => {
-      const value = e.target.value;
-      setSelectedAddress(value);
-      if (value) {
-        const target = allMarkersRef.current.find((item) => item.roadGroup === value);
-        if (target && mapInstanceRef.current) {
-          mapInstanceRef.current.panTo(target.position);
-        }
+    // 선택된 지역에 맞는 CSV 로드
+    useEffect(() => {
+      if (!mapReady || !mapInstanceRef.current || !kakaoRef.current) return;
+
+      const region = REGIONS.find((r) => r.value === selectedRegion);
+      if (!region) return;
+
+      const kakao = kakaoRef.current;
+      const map = mapInstanceRef.current;
+
+      // 기존 마커 제거
+      allMarkersRef.current.forEach((item) => {
+        item.marker.setMap(null);
+        item.labelOverlay.setMap(null);
+        item.infoCardOverlay.setMap(null);
+      });
+      allMarkersRef.current = [];
+      if (currentInfoCardRef.current) {
+        currentInfoCardRef.current.setMap(null);
+        currentInfoCardRef.current = null;
       }
-    };
+
+      const customMarkerImage = {
+        url: 'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/marker_red.png',
+        size: new kakao.maps.Size(64, 69),
+        offset: new kakao.maps.Point(27, 69)
+      };
+
+      const createMarkerWithLabel = (position, placeInfo) => {
+        const name = placeInfo.name;
+        const markerOption = { position };
+        if (customMarkerImage?.url) {
+          const markerImage = new kakao.maps.MarkerImage(
+            customMarkerImage.url, customMarkerImage.size, { offset: customMarkerImage.offset }
+          );
+          markerOption.image = markerImage;
+        }
+        const marker = new kakao.maps.Marker(markerOption);
+        marker.setMap(map);
+
+        const overlayContent = '<div style="padding:5px 10px;background:#fff;border:1px solid #ddd;border-radius:4px;font-size:12px;white-space:nowrap;margin-top:8px;">' + name + '</div>';
+        const customOverlay = new kakao.maps.CustomOverlay({ position, content: overlayContent, yAnchor: 0 });
+        customOverlay.setMap(map);
+
+        const cardHtml = '<div class="info-card" style="min-width:180px;max-width:260px;padding:12px 14px;background:#fff;border:1px solid #e0e0e0;border-radius:8px;font-size:12px;line-height:1.5;box-shadow:0 2px 8px rgba(0,0,0,0.12);">' +
+          '<div style="font-weight:700;margin-bottom:8px;font-size:13px;color:#333;">' + (placeInfo.name || '-') + '</div>' +
+          (placeInfo.detailInfo ? '<div style="color:#666;margin-bottom:4px;">' + placeInfo.detailInfo + '</div>' : '') +
+          (placeInfo.disabledInfo ? '<div style="color:#666;margin-bottom:4px;">' + placeInfo.disabledInfo + '</div>' : '') +
+          (placeInfo.modifiedAt ? '<div style="color:#888;font-size:11px;">기준일자 ' + placeInfo.modifiedAt + '</div>' : '') +
+          '</div>';
+
+        const infoCardOverlay = new kakao.maps.CustomOverlay({ position, content: cardHtml, yAnchor: 1.2, xAnchor: 0.5 });
+
+        kakao.maps.event.addListener(marker, 'mouseover', () => {
+          if (currentInfoCardRef.current) currentInfoCardRef.current.setMap(null);
+          infoCardOverlay.setMap(map);
+          currentInfoCardRef.current = infoCardOverlay;
+        });
+        kakao.maps.event.addListener(marker, 'mouseout', () => {
+          infoCardOverlay.setMap(null);
+          if (currentInfoCardRef.current === infoCardOverlay) currentInfoCardRef.current = null;
+        });
+
+        return { marker, labelOverlay: customOverlay, infoCardOverlay, position };
+      };
+
+      fetch(region.file)
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.arrayBuffer();
+        })
+        .then((buffer) => {
+          if (!mapInstanceRef.current || !kakaoRef.current) return;
+          const decoder = new TextDecoder('euc-kr');
+          const text = decoder.decode(buffer);
+          const rows = text.trim().split(/\r?\n/);
+          rows.shift();
+
+          const allMarkers = [];
+
+          rows.forEach((line, index) => {
+            if (!line.trim()) return;
+            const cols = line.split(',');
+            const lat = parseFloat(cols[0]);
+            const lng = parseFloat(cols[1]);
+            const name = (cols[2] || '').trim();
+            const detailInfo = (cols[3] || '').trim();
+            const disabledInfo = (cols[4] || '').trim();
+            const modifiedAt = (cols[7] || '').trim();
+
+            if (Number.isNaN(lat) || Number.isNaN(lng)) return;
+
+            const position = new kakao.maps.LatLng(lat, lng);
+            const placeInfo = { name, detailInfo, disabledInfo, modifiedAt };
+
+            if (index === 0) {
+              map.setCenter(position);
+              map.setLevel(6);
+            }
+
+            const markerItem = createMarkerWithLabel(position, placeInfo);
+            allMarkers.push(markerItem);
+          });
+
+          allMarkersRef.current = allMarkers;
+
+          if (map.relayout) {
+            requestAnimationFrame(() => map.relayout());
+          }
+        })
+        .catch((err) => console.error('CSV 로딩 실패:', err));
+    }, [selectedRegion, mapReady]);
+
+    const currentRegionLabel = REGIONS.find((r) => r.value === selectedRegion)?.label ?? selectedRegion;
 
     return (
       <div className="h-full flex flex-col">
-        <div className="p-4 bg-white border-b z-10 space-y-2">
+        <div className="p-4 bg-white border-b z-10 flex flex-col gap-2">
           <div className="flex justify-between items-center gap-2">
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -385,24 +381,40 @@ const App = () => {
               <Filter className="w-4 h-4 text-gray-600" />
             </button>
           </div>
-          <div>
-            <label htmlFor="filterSelect" className="block text-xs text-gray-600 mb-1">주소 필터</label>
-            <select 
-              id="filterSelect" 
-              value={selectedAddress}
-              onChange={handleFilterChange}
-              className="w-full max-w-full p-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setDropdownOpen((v) => !v)}
+              className="w-full flex items-center justify-between px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="">전체</option>
-              {addressOptions.map((addr) => (
-                <option key={addr} value={addr}>{addr}</option>
-              ))}
-            </select>
+              <span>{currentRegionLabel}</span>
+              <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {dropdownOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setDropdownOpen(false)} aria-hidden="true" />
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-20 max-h-48 overflow-y-auto">
+                  {REGIONS.map((r) => (
+                    <button
+                      key={r.value}
+                      type="button"
+                      onClick={() => {
+                        setSelectedRegion(r.value);
+                        setDropdownOpen(false);
+                      }}
+                      className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${selectedRegion === r.value ? 'bg-blue-50 text-blue-600 font-medium' : 'text-gray-700'}`}
+                    >
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
         </div>
 
-        <div className="flex-1 relative overflow-hidden" onClick={() => setSelectedPlace(null)}>
-          <div ref={mapRef} className="absolute inset-0" style={{ minHeight: 300 }} />
+        <div className="flex-1 relative overflow-hidden min-h-[320px]" onClick={() => setSelectedPlace(null)}>
+          <div ref={mapRef} className="absolute inset-0 w-full" style={{ minHeight: 320 }} />
 
           <div className="absolute bottom-8 right-4 flex flex-col gap-2">
             <button className="w-10 h-10 bg-white rounded-lg shadow-md flex items-center justify-center text-gray-600 active:bg-gray-50">
