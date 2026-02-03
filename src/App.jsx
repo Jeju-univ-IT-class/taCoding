@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Map as MapIcon, Star, Heart, MessageSquare, User, Home, MapPin, ChevronRight, Filter, ImageOff, Plus, Minus, Navigation } from 'lucide-react';
+import { Search, Map as MapIcon, Star, Heart, MessageSquare, User, Home, MapPin, ChevronRight, ChevronDown, Filter, ImageOff, Plus, Minus, Navigation } from 'lucide-react';
 
 // 제주도 특화 Mock Data (tags 데이터 추가 버전)
 const REVIEWS = [
@@ -54,21 +54,46 @@ export default function App() {
     );
   };
 
-  // 화면에 보여줄 태그 리스트
-  const tags = ["전체", "바다뷰", "주차가능", "반려동물동반", "일출맛집"];
+// 지역별 CSV 목록 - ASCII 파일명 사용 (macOS/Windows/Linux 호환)
+// (위도,경도,장소명칭,장소상세정보,무장애관광정보,추천코스여부,데이터품질점검결과,데이터기준일자)
+const REGIONS = [
+  { value: '12-법환포구', label: '법환포구', file: '/region_12.csv' },
+  { value: '14-토끼섬과하도포구', label: '토끼섬과하도포구', file: '/region_14.csv' },
+  { value: '35-해녀박물관', label: '해녀박물관', file: '/region_35.csv' },
+  { value: '49-동문시장', label: '동문시장', file: '/region_49.csv' },
+  { value: '50-제주도립미술관', label: '제주도립미술관', file: '/region_50.csv' },
+];
 
-  // 필터링 로직: 태그 필터 + 검색어 필터를 모두 적용
-  const filteredReviews = REVIEWS.filter(review => {
-    // 1. 태그 필터 확인
-    const matchesTag = selectedTag === '전체' || (review.tags && review.tags.includes(selectedTag));
-    
-    // 2. 검색어 필터 확인
-    const matchesLocation = review.location.includes(searchQuery);
-    const matchesTags = review.tags.some(tag => tag.includes(searchQuery));
-    const matchesSearch = matchesLocation || matchesTags;
-    
-    // 3. 두 조건을 모두 만족해야 함
-    return matchesTag && (searchQuery === '' || matchesSearch);
+// Kakao Maps SDK 동적 로더 (kakao.maps.load 콜백으로 LatLng 등 API 준비 완료 후 resolve)
+function loadKakaoMap(appkey) {
+  return new Promise((resolve, reject) => {
+    const initMap = () => {
+      if (window.kakao?.maps?.LatLng) return resolve(window.kakao);
+      if (window.kakao?.maps?.load) {
+        window.kakao.maps.load(() => resolve(window.kakao));
+        return;
+      }
+      reject(new Error('kakao.maps not available'));
+    };
+
+    if (window.kakao?.maps?.LatLng) return resolve(window.kakao);
+    if (window.kakao?.maps?.load) {
+      window.kakao.maps.load(() => resolve(window.kakao));
+      return;
+    }
+
+    const script = document.createElement('script');
+    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${appkey}&autoload=false`;
+    script.async = true;
+    script.onload = () => {
+      if (window.kakao?.maps?.load) {
+        window.kakao.maps.load(() => resolve(window.kakao));
+      } else {
+        initMap();
+      }
+    };
+    script.onerror = (err) => reject(err);
+    document.head.appendChild(script);
   });
   return (
     <div className="flex flex-col h-full bg-slate-50 font-sans text-slate-900 overflow-hidden">
@@ -107,70 +132,311 @@ export default function App() {
               </h2>
               <span className="text-xs font-bold text-slate-400">전체보기</span>
             </div>
-
-            {/* 리뷰 카드 목록 (4단계: filteredReviews 사용) */}
-            <div className="space-y-4">
-              {filteredReviews.length > 0 ? (
-                filteredReviews.map((review) => (
-                  <div key={review.id} className="bg-white rounded-3xl overflow-hidden shadow-sm border border-slate-100 group">
-                    <div className="relative h-64 overflow-hidden">
-                      <img 
-                        src={review.image} 
-                        alt={review.location} 
-                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
-                      />
-                      <div className="absolute top-4 left-4 flex gap-2">
-                        {review.tags.map(tag => (
-                          <span key={tag} className="px-3 py-1 bg-black/40 backdrop-blur-md text-white text-[10px] font-bold rounded-full">
-                            #{tag}
-                          </span>
-                        ))}
-                      </div>
-                      <button 
-                        onClick={() => toggleFavorite(review.id)}
-                        className="absolute top-4 right-4 p-2.5 bg-white/90 backdrop-blur-md rounded-full shadow-sm hover:bg-white transition-colors"
-                      >
-                        <Heart className={`w-5 h-5 ${favorites.includes(review.id) ? 'fill-red-500 text-red-500' : 'text-slate-400'}`} />
-                      </button>
-                    </div>
-
-                    <div className="p-5">
-                      <div className="flex justify-between items-start mb-3">
-                        <div>
-                          <div className="flex items-center gap-1.5 text-blue-600 mb-1">
-                            <MapPin className="w-3.5 h-3.5" />
-                            <span className="text-xs font-black uppercase tracking-wider">{review.location}</span>
-                          </div>
-                          <h3 className="font-bold text-lg">{review.user}의 일기</h3>
-                        </div>
-                        <div className="flex items-center bg-yellow-50 px-2 py-1 rounded-lg">
-                          <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
-                          <span className="ml-1 text-sm font-bold text-yellow-700">{review.rating}</span>
-                        </div>
-                      </div>
-                      <p className="text-slate-500 text-sm leading-relaxed mb-4 line-clamp-2">
-                        {review.comment}
-                      </p>
-                      <div className="flex items-center gap-4 pt-4 border-t border-slate-50">
-                        <div className="flex items-center gap-1.5 text-slate-400">
-                          <Heart className="w-4 h-4" />
-                          <span className="text-xs font-bold">{review.likes + (favorites.includes(review.id) ? 1 : 0)}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5 text-slate-400">
-                          <MessageSquare className="w-4 h-4" />
-                          <span className="text-xs font-bold">{review.replies}</span>
-                        </div>
-                      </div>
-                    </div>
+            <div className="p-4">
+              <div className="flex justify-between items-start mb-2">
+                <div>
+                  <div className="flex items-center text-blue-600 text-xs font-semibold mb-1">
+                    <MapPin className="w-3 h-3 mr-1" />
+                    {review.location}
                   </div>
-                ))
-              ) : (
-                <div className="py-20 text-center space-y-3">
-                  <ImageOff className="w-12 h-12 text-slate-200 mx-auto" />
-                  <p className="text-slate-400 font-medium">해당 태그의 리뷰가 아직 없어요!</p>
+                  <h3 className="font-bold text-lg">{review.user}님의 여행 기록</h3>
                 </div>
-              )}
+              </div>
+              <p className="text-gray-600 text-sm line-clamp-3 mb-4 leading-relaxed">
+                {review.comment}
+              </p>
+              <div className="flex items-center justify-between pt-4 border-t border-gray-50 text-gray-400">
+                <div className="flex gap-4">
+                  <span className="flex items-center text-xs">
+                    <Heart className="w-4 h-4 mr-1 text-red-400" /> {review.likes}
+                  </span>
+                  <span className="flex items-center text-xs">
+                    <MessageSquare className="w-4 h-4 mr-1" /> {review.replies}
+                  </span>
+                </div>
+                <button className="text-xs font-bold text-blue-600 flex items-center hover:underline">
+                  전체보기 <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
             </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  // 지도 뷰 (Kakao Maps + 무장애여행 CSV 연동)
+  const MapView = () => {
+    const mapRef = useRef(null);
+    const allMarkersRef = useRef([]);
+    const currentInfoCardRef = useRef(null);
+    const mapInstanceRef = useRef(null);
+    const kakaoRef = useRef(null);
+    const [selectedRegion, setSelectedRegion] = useState(REGIONS[0].value);
+    const [mapReady, setMapReady] = useState(false);
+    const [dropdownOpen, setDropdownOpen] = useState(false);
+
+    // 지도 초기화 (1회)
+    useEffect(() => {
+      const APP_KEY = 'cf864dc2f0d80f5ca499d30ea483efd6';
+      let mounted = true;
+
+      loadKakaoMap(APP_KEY).then((kakao) => {
+        if (!mounted) return;
+        const container = mapRef.current;
+        if (!container) return;
+
+        kakaoRef.current = kakao;
+        const options = {
+          center: new kakao.maps.LatLng(33.450701, 126.570667),
+          level: 3
+        };
+        const map = new kakao.maps.Map(container, options);
+        mapInstanceRef.current = map;
+        requestAnimationFrame(() => {
+          if (map.relayout) map.relayout();
+          setMapReady(true);
+        });
+      }).catch((e) => console.error('Kakao Maps 로드 실패', e));
+
+      return () => {
+        mounted = false;
+        allMarkersRef.current.forEach((item) => {
+          item.marker.setMap(null);
+          item.labelOverlay.setMap(null);
+          item.infoCardOverlay.setMap(null);
+        });
+        allMarkersRef.current = [];
+        mapInstanceRef.current = null;
+        kakaoRef.current = null;
+      };
+    }, []);
+
+    // 선택된 지역에 맞는 CSV 로드
+    useEffect(() => {
+      if (!mapReady || !mapInstanceRef.current || !kakaoRef.current) return;
+
+      const region = REGIONS.find((r) => r.value === selectedRegion);
+      if (!region) return;
+
+      const kakao = kakaoRef.current;
+      const map = mapInstanceRef.current;
+
+      // 기존 마커 제거
+      allMarkersRef.current.forEach((item) => {
+        item.marker.setMap(null);
+        item.labelOverlay.setMap(null);
+        item.infoCardOverlay.setMap(null);
+      });
+      allMarkersRef.current = [];
+      if (currentInfoCardRef.current) {
+        currentInfoCardRef.current.setMap(null);
+        currentInfoCardRef.current = null;
+      }
+
+      const customMarkerImage = {
+        url: 'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/marker_red.png',
+        size: new kakao.maps.Size(64, 69),
+        offset: new kakao.maps.Point(27, 69)
+      };
+
+      const createMarkerWithLabel = (position, placeInfo) => {
+        const name = placeInfo.name;
+        const markerOption = { position };
+        if (customMarkerImage?.url) {
+          const markerImage = new kakao.maps.MarkerImage(
+            customMarkerImage.url, customMarkerImage.size, { offset: customMarkerImage.offset }
+          );
+          markerOption.image = markerImage;
+        }
+        const marker = new kakao.maps.Marker(markerOption);
+        marker.setMap(map);
+
+        const overlayContent = '<div style="padding:5px 10px;background:#fff;border:1px solid #ddd;border-radius:4px;font-size:12px;white-space:nowrap;margin-top:8px;">' + name + '</div>';
+        const customOverlay = new kakao.maps.CustomOverlay({ position, content: overlayContent, yAnchor: 0 });
+        customOverlay.setMap(map);
+
+        const cardHtml = '<div class="info-card" style="min-width:180px;max-width:260px;padding:12px 14px;background:#fff;border:1px solid #e0e0e0;border-radius:8px;font-size:12px;line-height:1.5;box-shadow:0 2px 8px rgba(0,0,0,0.12);">' +
+          '<div style="font-weight:700;margin-bottom:8px;font-size:13px;color:#333;">' + (placeInfo.name || '-') + '</div>' +
+          (placeInfo.detailInfo ? '<div style="color:#666;margin-bottom:4px;">' + placeInfo.detailInfo + '</div>' : '') +
+          (placeInfo.disabledInfo ? '<div style="color:#666;margin-bottom:4px;">' + placeInfo.disabledInfo + '</div>' : '') +
+          (placeInfo.modifiedAt ? '<div style="color:#888;font-size:11px;">기준일자 ' + placeInfo.modifiedAt + '</div>' : '') +
+          '</div>';
+
+        const infoCardOverlay = new kakao.maps.CustomOverlay({ position, content: cardHtml, yAnchor: 1.2, xAnchor: 0.5 });
+
+        kakao.maps.event.addListener(marker, 'mouseover', () => {
+          if (currentInfoCardRef.current) currentInfoCardRef.current.setMap(null);
+          infoCardOverlay.setMap(map);
+          currentInfoCardRef.current = infoCardOverlay;
+        });
+        kakao.maps.event.addListener(marker, 'mouseout', () => {
+          infoCardOverlay.setMap(null);
+          if (currentInfoCardRef.current === infoCardOverlay) currentInfoCardRef.current = null;
+        });
+
+        return { marker, labelOverlay: customOverlay, infoCardOverlay, position };
+      };
+
+      fetch(region.file)
+        .then((res) => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.arrayBuffer();
+        })
+        .then((buffer) => {
+          if (!mapInstanceRef.current || !kakaoRef.current) return;
+          const decoder = new TextDecoder('euc-kr');
+          const text = decoder.decode(buffer);
+          const rows = text.trim().split(/\r?\n/);
+          rows.shift();
+
+          const allMarkers = [];
+
+          rows.forEach((line, index) => {
+            if (!line.trim()) return;
+            const cols = line.split(',');
+            const lat = parseFloat(cols[0]);
+            const lng = parseFloat(cols[1]);
+            const name = (cols[2] || '').trim();
+            const detailInfo = (cols[3] || '').trim();
+            const disabledInfo = (cols[4] || '').trim();
+            const modifiedAt = (cols[7] || '').trim();
+
+            if (Number.isNaN(lat) || Number.isNaN(lng)) return;
+
+            const position = new kakao.maps.LatLng(lat, lng);
+            const placeInfo = { name, detailInfo, disabledInfo, modifiedAt };
+
+            if (index === 0) {
+              map.setCenter(position);
+              map.setLevel(6);
+            }
+
+            const markerItem = createMarkerWithLabel(position, placeInfo);
+            allMarkers.push(markerItem);
+          });
+
+          allMarkersRef.current = allMarkers;
+
+          if (map.relayout) {
+            requestAnimationFrame(() => map.relayout());
+          }
+        })
+        .catch((err) => console.error('CSV 로딩 실패:', err));
+    }, [selectedRegion, mapReady]);
+
+    const currentRegionLabel = REGIONS.find((r) => r.value === selectedRegion)?.label ?? selectedRegion;
+
+    return (
+      <div className="h-full flex flex-col">
+        <div className="p-4 bg-white border-b z-10 flex flex-col gap-2">
+          <div className="flex justify-between items-center gap-2">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <input 
+                type="text" 
+                placeholder="주변 명소 검색" 
+                className="w-full bg-gray-100 rounded-lg py-2 pl-9 pr-4 text-xs focus:outline-none"
+              />
+            </div>
+            <button className="p-2 bg-gray-100 rounded-lg flex-shrink-0">
+              <Filter className="w-4 h-4 text-gray-600" />
+            </button>
+          </div>
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setDropdownOpen((v) => !v)}
+              className="w-full flex items-center justify-between px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <span>{currentRegionLabel}</span>
+              <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {dropdownOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setDropdownOpen(false)} aria-hidden="true" />
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-20 max-h-48 overflow-y-auto">
+                  {REGIONS.map((r) => (
+                    <button
+                      key={r.value}
+                      type="button"
+                      onClick={() => {
+                        setSelectedRegion(r.value);
+                        setDropdownOpen(false);
+                      }}
+                      className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${selectedRegion === r.value ? 'bg-blue-50 text-blue-600 font-medium' : 'text-gray-700'}`}
+                    >
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="flex-1 relative overflow-hidden min-h-[320px]" onClick={() => setSelectedPlace(null)}>
+          <div ref={mapRef} className="absolute inset-0 w-full" style={{ minHeight: 320 }} />
+
+          <div className="absolute bottom-8 right-4 flex flex-col gap-2">
+            <button className="w-10 h-10 bg-white rounded-lg shadow-md flex items-center justify-center text-gray-600 active:bg-gray-50">
+              <Navigation className="w-5 h-5" />
+            </button>
+            <div className="flex flex-col bg-white rounded-lg shadow-md overflow-hidden">
+              <button className="w-10 h-10 flex items-center justify-center text-gray-600 border-b border-gray-100 active:bg-gray-50">
+                <Plus className="w-5 h-5" />
+              </button>
+              <button className="w-10 h-10 flex items-center justify-center text-gray-600 active:bg-gray-50">
+                <Minus className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="flex justify-center bg-gray-100 min-h-screen">
+      <div className="w-full max-w-md bg-white min-h-screen shadow-2xl flex flex-col relative overflow-hidden">
+        
+        <main className="flex-1 overflow-y-auto no-scrollbar bg-white">
+          {activeTab === 'home' && <HomeView />}
+          {activeTab === 'map' && <MapView />}
+          {activeTab === 'profile' && (
+            <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8 text-center">
+              <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                <User className="w-10 h-10 text-gray-300" />
+              </div>
+              <h4 className="text-gray-800 font-bold mb-1">로그인이 필요합니다</h4>
+              <p className="text-sm">나의 여행 기록을 저장하고<br/>친구들과 공유해보세요!</p>
+              <button className="mt-6 w-full bg-blue-600 text-white py-3 rounded-xl font-bold">로그인 / 회원가입</button>
+            </div>
+          )}
+        </main>
+
+        <nav className="fixed bottom-0 w-full max-w-md bg-white/80 backdrop-blur-lg border-t border-gray-100 px-6 py-3 flex justify-between items-center z-20">
+          <button 
+            onClick={() => setActiveTab('home')}
+            className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'home' ? 'text-blue-600 scale-110' : 'text-gray-400'}`}
+          >
+            <Home className="w-6 h-6" />
+            <span className="text-[10px] font-bold">홈</span>
+          </button>
+          <button 
+            onClick={() => {
+              setActiveTab('map');
+              setSelectedPlace(null);
+            }}
+            className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'map' ? 'text-blue-600 scale-110' : 'text-gray-400'}`}
+          >
+            <MapIcon className="w-6 h-6" />
+            <span className="text-[10px] font-bold">탐색</span>
+          </button>
+          <div className="relative -top-5">
+            <button className="w-14 h-14 bg-gradient-to-tr from-blue-600 to-blue-400 rounded-full shadow-lg shadow-blue-200 flex items-center justify-center text-white transform active:scale-95 transition-transform">
+              <span className="text-3xl font-light">+</span>
+            </button>
           </div>
         )}
       </main>

@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8"/>
+	<title>Kakao 지도 시작하기</title>
+	<style>
+		#filter {
+			margin: 10px 0;
+		}
+		#filterSelect {
+			width: 240px;
+			max-width: 100%;
+			padding: 6px 8px;
+			font-size: 12px;
+			border: 1px solid #d0d0d0;
+			border-radius: 6px;
+		}
+	</style>
+</head>
+<body>
+	<div id="filter">
+		<label for="filterSelect">주소 필터</label>
+		<select id="filterSelect"></select>
+	</div>
+	<div id="map" style="width:500px;height:400px;"></div>
+	<script type="text/javascript" src="//dapi.kakao.com/v2/maps/sdk.js?appkey=cf864dc2f0d80f5ca499d30ea483efd6"></script>
+	<script>
+		var container = document.getElementById('map');
+		var options = {
+			center: new kakao.maps.LatLng(33.450701, 126.570667),
+			level: 3
+		};
+
+		var map = new kakao.maps.Map(container, options);
+		var csvFile = '제주특별자치도_무장애여행정보_12-법환포구_20201222.csv';
+		var filterSelect = document.getElementById('filterSelect');
+		var allMarkers = [];
+		var selectedAddress = '';
+
+		// 커스텀 마커 이미지 (null이면 기본 핀 사용)
+		var customMarkerImage = {
+			url: 'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/marker_red.png',
+			size: new kakao.maps.Size(64, 69),
+			offset: new kakao.maps.Point(27, 69)  // 이미지에서 꼭지점(아래쪽 중앙) 좌표
+		};
+		// 다른 이미지 사용 예: url을 자신의 이미지 주소로 바꾸고, size/offset을 이미지에 맞게 조정
+
+		var currentInfoCard = null;
+
+		function getRoadGroup(roadAddress) {
+			if (!roadAddress) return '주소없음';
+			var parts = roadAddress.split(' ');
+			var areaToken = '';
+			var roadToken = '';
+			for (var i = 0; i < parts.length; i++) {
+				var token = parts[i].trim();
+				if (!areaToken && (token.endsWith('시') || token.endsWith('동'))) {
+					areaToken = token;
+				}
+				if (!roadToken && (token.endsWith('로') || token.endsWith('길'))) {
+					roadToken = token;
+				}
+			}
+			if (!roadToken) return '주소없음';
+			return areaToken ? areaToken + ' ' + roadToken : roadToken;
+		}
+
+		function createMarkerWithLabel(position, placeInfo) {
+			var name = placeInfo.name;
+			var markerOption = { position: position };
+			if (customMarkerImage && customMarkerImage.url) {
+				var markerImage = new kakao.maps.MarkerImage(
+					customMarkerImage.url,
+					customMarkerImage.size,
+					{ offset: customMarkerImage.offset }
+				);
+				markerOption.image = markerImage;
+			}
+			var marker = new kakao.maps.Marker(markerOption);
+			marker.setMap(map);
+
+			var overlayContent = '<div style="padding:5px 10px;background:#fff;border:1px solid #ddd;border-radius:4px;font-size:12px;white-space:nowrap;margin-top:8px;">' + name + '</div>';
+			var customOverlay = new kakao.maps.CustomOverlay({
+				position: position,
+				content: overlayContent,
+				yAnchor: 0
+			});
+			customOverlay.setMap(map);
+
+			var cardHtml = '<div class="info-card" style="min-width:180px;max-width:260px;padding:12px 14px;background:#fff;border:1px solid #e0e0e0;border-radius:8px;font-size:12px;line-height:1.5;box-shadow:0 2px 8px rgba(0,0,0,0.12);">';
+			cardHtml += '<div style="font-weight:700;margin-bottom:8px;font-size:13px;color:#333;">' + (placeInfo.name || '-') + '</div>';
+			if (placeInfo.roadAddress) cardHtml += '<div style="color:#666;margin-bottom:4px;">도로명 ' + placeInfo.roadAddress + '</div>';
+			if (placeInfo.jibunAddress) cardHtml += '<div style="color:#666;margin-bottom:4px;">지번 ' + placeInfo.jibunAddress + '</div>';
+			if (placeInfo.modifiedAt) cardHtml += '<div style="color:#888;font-size:11px;">수정일시 ' + placeInfo.modifiedAt + '</div>';
+			cardHtml += '</div>';
+
+			var infoCardOverlay = new kakao.maps.CustomOverlay({
+				position: position,
+				content: cardHtml,
+				yAnchor: 1.2,
+				xAnchor: 0.5
+			});
+
+			kakao.maps.event.addListener(marker, 'mouseover', function() {
+				if (currentInfoCard) currentInfoCard.setMap(null);
+				infoCardOverlay.setMap(map);
+				currentInfoCard = infoCardOverlay;
+			});
+			kakao.maps.event.addListener(marker, 'mouseout', function() {
+				infoCardOverlay.setMap(null);
+				if (currentInfoCard === infoCardOverlay) currentInfoCard = null;
+			});
+
+			return {
+				marker: marker,
+				labelOverlay: customOverlay,
+				infoCardOverlay: infoCardOverlay,
+				roadGroup: placeInfo.roadGroup,
+				position: position
+			};
+		}
+
+		function setMarkerVisibility(item, visible) {
+			item.marker.setMap(visible ? map : null);
+			item.labelOverlay.setMap(visible ? map : null);
+			if (!visible) {
+				item.infoCardOverlay.setMap(null);
+				if (currentInfoCard === item.infoCardOverlay) currentInfoCard = null;
+			}
+		}
+
+		function applyFilter() {
+			if (!selectedAddress) {
+				allMarkers.forEach(function(item) {
+					setMarkerVisibility(item, true);
+				});
+				return;
+			}
+			allMarkers.forEach(function(item) {
+				setMarkerVisibility(item, item.roadGroup === selectedAddress);
+			});
+		}
+
+		function buildFilters(addresses) {
+			filterSelect.innerHTML = '';
+
+			var allOption = document.createElement('option');
+			allOption.value = '';
+			allOption.textContent = '전체';
+			filterSelect.appendChild(allOption);
+
+			addresses.forEach(function(address) {
+				var option = document.createElement('option');
+				option.value = address;
+				option.textContent = address;
+				filterSelect.appendChild(option);
+			});
+
+			filterSelect.addEventListener('change', function() {
+				selectedAddress = filterSelect.value;
+				applyFilter();
+				if (selectedAddress) {
+					var target = allMarkers.find(function(item) {
+						return item.roadGroup === selectedAddress;
+					});
+					if (target) {
+						map.panTo(target.position);
+					}
+				}
+			});
+		}
+
+		fetch(encodeURI(csvFile))
+			.then(function(response) {
+				return response.arrayBuffer();
+			})
+			.then(function(buffer) {
+				var decoder = new TextDecoder('euc-kr');
+				var text = decoder.decode(buffer);
+				var rows = text.trim().split(/\r?\n/);
+
+				// 헤더 제거 (위도,경도,장소명,시군구,시도,무장애...,수정일시)
+				rows.shift();
+
+				var addressSet = new Set();
+
+				rows.forEach(function(line, index) {
+					if (!line.trim()) {
+						return;
+					}
+
+					var cols = line.split(',');
+					var lat = parseFloat(cols[0]);
+					var lng = parseFloat(cols[1]);
+					var name = (cols[2] || '').trim();
+					var roadAddress = ((cols[3] || '').trim() + ' ' + (cols[4] || '').trim()).trim();
+					var modifiedAt = (cols[7] || '').trim();
+					var jibunAddress = (cols[6] || '').trim();
+
+					if (Number.isNaN(lat) || Number.isNaN(lng)) {
+						return;
+					}
+
+					var position = new kakao.maps.LatLng(lat, lng);
+					var roadGroup = getRoadGroup(roadAddress);
+					var placeInfo = { name: name, roadAddress: roadAddress, jibunAddress: jibunAddress, modifiedAt: modifiedAt, roadGroup: roadGroup };
+					addressSet.add(roadGroup);
+
+					if (index === 0) {
+						map.setCenter(position);
+					}
+
+					var markerItem = createMarkerWithLabel(position, placeInfo);
+					allMarkers.push(markerItem);
+				});
+
+				buildFilters(Array.from(addressSet).sort());
+				applyFilter();
+			})
+			.catch(function(error) {
+				console.error('CSV 로딩 실패:', error);
+			});
+	</script>
+</body>
+</html>
