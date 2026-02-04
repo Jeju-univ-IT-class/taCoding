@@ -281,19 +281,7 @@ function useRegionBadges() {
 
 function loadKakaoMap(appkey) {
   return new Promise((resolve, reject) => {
-    const initMap = () => {
-      if (window.kakao?.maps?.LatLng) return resolve(window.kakao);
-      if (window.kakao?.maps?.load) {
-        window.kakao.maps.load(() => resolve(window.kakao));
-        return;
-      }
-      reject(new Error('kakao.maps not available'));
-    };
     if (window.kakao?.maps?.LatLng) return resolve(window.kakao);
-    if (window.kakao?.maps?.load) {
-      window.kakao.maps.load(() => resolve(window.kakao));
-      return;
-    }
     const script = document.createElement('script');
     script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${appkey}&autoload=false`;
     script.async = true;
@@ -301,7 +289,7 @@ function loadKakaoMap(appkey) {
       if (window.kakao?.maps?.load) {
         window.kakao.maps.load(() => resolve(window.kakao));
       } else {
-        initMap();
+        resolve(window.kakao);
       }
     };
     script.onerror = (err) => reject(err);
@@ -322,13 +310,12 @@ const SafeImage = ({ src, alt, className }) => {
   return <img src={src} alt={alt} className={className} onError={() => setError(true)} />;
 };
 
-// --- 하위 컴포넌트들을 App 외부로 분리 ---
+// --- 서브 뷰 컴포넌트 ---
 
 const HomeView = ({ searchQuery, setSearchQuery, selectedTag, setSelectedTag, tags, filteredReviews, favorites, toggleFavorite, getBadgesForRegion }) => (
   <div className="pb-24 animate-[fade-in_0.4s_ease-out]">
     <header className="sticky top-0 bg-white z-20 px-4 pt-8 pb-3 shadow-sm border-b border-gray-50 flex items-center gap-3">
       <div className="flex items-center gap-2 shrink-0">
-        {/* 로고: border 및 shadow 없음 상태 유지 */}
         <div className="w-10 h-10 rounded-xl overflow-hidden bg-white shrink-0">
           <img src="/favicon.png" alt="Logo" className="w-full h-full object-cover" />
         </div>
@@ -355,9 +342,7 @@ const HomeView = ({ searchQuery, setSearchQuery, selectedTag, setSelectedTag, ta
           key={tag}
           onClick={() => setSelectedTag(tag)}
           className={`px-4 py-1.5 rounded-full text-sm font-bold whitespace-nowrap transition-all
-            ${selectedTag === tag 
-              ? 'bg-[#45a494] text-white shadow-lg shadow-[#45a494]/20 scale-105' 
-              : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+            ${selectedTag === tag ? 'bg-[#45a494] text-white shadow-lg shadow-[#45a494]/20 scale-105' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
         >
           {tag === '전체' ? tag : `#${tag}`}
         </button>
@@ -365,14 +350,13 @@ const HomeView = ({ searchQuery, setSearchQuery, selectedTag, setSelectedTag, ta
     </div>
 
     <div className="p-4 space-y-6">
-      {/* "지금 뜨는 리뷰" 텍스트 제거 상태 유지 */}
       {filteredReviews.length > 0 ? (
         filteredReviews.map((review) => (
           <div key={review.id} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
             <div className="relative h-64">
               <SafeImage src={review.image} alt={review.location} className="w-full h-full object-cover" />
               <div className="absolute top-4 left-4 flex gap-2">
-                {review.tags.map(tag => (
+                {(review.tags || []).map(tag => (
                   <span key={tag} className="px-3 py-1 bg-black/40 backdrop-blur-md text-white text-[10px] font-bold rounded-full">#{tag}</span>
                 ))}
               </div>
@@ -383,7 +367,7 @@ const HomeView = ({ searchQuery, setSearchQuery, selectedTag, setSelectedTag, ta
                 <Heart className={`w-5 h-5 ${favorites.includes(review.id) ? 'fill-red-500 text-red-500' : ''}`} />
               </button>
               <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg text-xs font-bold shadow-sm">
-                <Star className="inline w-3 h-3 text-yellow-500 fill-yellow-500 mr-1" /> {review.rating}
+                <Star className="inline w-3 h-3 text-yellow-500 fill-yellow-500 mr-1" /> {review.rating || 5.0}
               </div>
             </div>
             <div className="p-4">
@@ -417,95 +401,116 @@ const HomeView = ({ searchQuery, setSearchQuery, selectedTag, setSelectedTag, ta
   </div>
 );
 
+const CreateReviewView = ({ onSave, onCancel }) => {
+  const [location, setLocation] = useState("");
+  const [comment, setComment] = useState("");
+  const [image, setImage] = useState("");
+  const fileInputRef = useRef(null);
+
+  const handleImageChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => setImage(reader.result);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-full animate-[fade-in_0.4s_ease-out] bg-white">
+      <div className="p-6 border-b flex items-center justify-between sticky top-0 bg-white z-10">
+        <button onClick={onCancel} className="text-gray-400 p-2"><X /></button>
+        <h2 className="text-lg font-black text-[#45a494]">새 리뷰 작성</h2>
+        <button 
+          onClick={() => onSave({ location, comment, image })}
+          className="text-[#45a494] font-bold px-4 py-2 active:scale-95 transition-transform"
+          disabled={!location || !comment}
+        >
+          등록
+        </button>
+      </div>
+
+      <div className="p-6 space-y-6 overflow-y-auto no-scrollbar pb-32">
+        <div 
+          onClick={() => fileInputRef.current?.click()}
+          className="w-full aspect-video bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center cursor-pointer overflow-hidden relative"
+        >
+          {image ? (
+            <img src={image} className="w-full h-full object-cover" alt="Selected" />
+          ) : (
+            <>
+              <ImageIcon className="text-gray-300 mb-2" size={40} />
+              <p className="text-xs text-gray-400 font-bold">장소 사진을 추가해주세요</p>
+            </>
+          )}
+          <input type="file" ref={fileInputRef} onChange={handleImageChange} className="hidden" accept="image/*" />
+        </div>
+
+        <div className="space-y-4">
+          <div className="relative">
+            <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
+            <input 
+              type="text" placeholder="장소 명칭 (예: 성산일출봉)" 
+              value={location} onChange={(e) => setLocation(e.target.value)}
+              className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-4 pl-12 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-[#45a494]/20"
+            />
+          </div>
+          <textarea 
+            placeholder="이곳에서의 여행은 어떠셨나요? 휠체어 접근성이나 팁을 공유해주세요."
+            rows="6" value={comment} onChange={(e) => setComment(e.target.value)}
+            className="w-full bg-gray-50 border border-gray-100 rounded-3xl p-5 text-sm focus:outline-none focus:ring-2 focus:ring-[#45a494]/20 resize-none"
+          />
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const AuthView = ({ isSignUpMode, setIsSignUpMode, email, setEmail, password, setPassword, nickname, setNickname, authLoading, authMessage, handleAuth }) => (
   <div className="p-8 flex flex-col h-full animate-[fade-in_0.4s_ease-out]">
     <div className="flex flex-col items-center mb-10 mt-8">
-      {/* 로고: border 및 shadow 없음 상태 유지 */}
       <div className="w-20 h-20 rounded-3xl overflow-hidden bg-white mb-4 shrink-0">
         <img src="/favicon.png" alt="Logo" className="w-full h-full object-cover" />
       </div>
       <h2 className="text-2xl font-black text-[#45a494]">고치가게</h2>
-      <p className="text-gray-400 text-xs mt-1 font-bold tracking-widest uppercase">
-        {isSignUpMode ? "Join Us" : "Welcome Back"}
-      </p>
+      <p className="text-gray-400 text-xs mt-1 font-bold tracking-widest uppercase">{isSignUpMode ? "Join Us" : "Welcome Back"}</p>
     </div>
-
     <form onSubmit={handleAuth} className="space-y-4">
       {isSignUpMode && (
         <div className="relative">
           <User className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-          <input 
-            type="text" placeholder="닉네임" value={nickname}
-            onChange={(e) => setNickname(e.target.value)}
-            className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-[#45a494]/20 text-sm"
-          />
+          <input type="text" placeholder="닉네임" value={nickname} onChange={(e) => setNickname(e.target.value)} className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-[#45a494]/20 text-sm transition-all" />
         </div>
       )}
       <div className="relative">
         <Mail className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-        <input 
-          type="email" placeholder="이메일" value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-[#45a494]/20 text-sm"
-        />
+        <input type="email" placeholder="이메일" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-[#45a494]/20 text-sm transition-all" />
       </div>
       <div className="relative">
         <Lock className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-        <input 
-          type="password" placeholder="비밀번호" value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-[#45a494]/20 text-sm"
-        />
+        <input type="password" placeholder="비밀번호" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-4 pl-12 pr-4 focus:outline-none focus:ring-2 focus:ring-[#45a494]/20 text-sm transition-all" />
       </div>
-
-      {authMessage.text && (
-        <div className={`p-3 rounded-xl text-[11px] font-bold text-center ${authMessage.type === 'error' ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-500'}`}>
-          {authMessage.text}
-        </div>
-      )}
-
-      <button 
-        type="submit"
-        disabled={authLoading}
-        className="w-full bg-[#45a494] text-white py-4 rounded-2xl font-black shadow-lg shadow-[#45a494]/20 flex items-center justify-center transition-all active:scale-95"
-      >
-        {authLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : (isSignUpMode ? "회원가입 하기" : "로그인")}
-      </button>
+      {authMessage.text && <div className={`p-3 rounded-xl text-[11px] font-bold text-center ${authMessage.type === 'error' ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-500'}`}>{authMessage.text}</div>}
+      <button type="submit" disabled={authLoading} className="w-full bg-[#45a494] text-white py-4 rounded-2xl font-black shadow-lg shadow-[#45a494]/20 flex items-center justify-center transition-all active:scale-95">{authLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : (isSignUpMode ? "회원가입 하기" : "로그인")}</button>
     </form>
-
-    <button 
-      onClick={() => { setIsSignUpMode(!isSignUpMode); }}
-      className="mt-6 text-sm font-bold text-gray-400 hover:text-[#45a494] transition-colors"
-    >
-      {isSignUpMode ? "이미 계정이 있으신가요? 로그인" : "처음이신가요? 회원가입 하기"}
-    </button>
+    <button onClick={() => setIsSignUpMode(!isSignUpMode)} className="mt-6 w-full text-sm font-bold text-gray-400 hover:text-[#45a494] transition-colors">{isSignUpMode ? "이미 계정이 있으신가요? 로그인" : "처음이신가요? 회원가입 하기"}</button>
   </div>
 );
 
-const ProfileView = ({ user, handleLogout, favoritesCount, onUpdateProfile, reviewCount = 0 }) => {
+const ProfileView = ({ user, handleLogout, favoritesCount, onUpdateProfile, myReviews, onDeleteReview, onUpdateReview, setActiveTab }) => {
   const [isEditing, setIsEditing] = useState(false);
+  const [viewMode, setViewMode] = useState('main'); 
   const [newNickname, setNewNickname] = useState(user?.nickname || "");
   const [tempProfileImage, setTempProfileImage] = useState(user?.profileImage || "");
+  const [editingReviewId, setEditingReviewId] = useState(null);
+  const [editComment, setEditComment] = useState("");
   const fileInputRef = useRef(null);
-
-  useEffect(() => {
-    setNewNickname(user?.nickname || "");
-    setTempProfileImage(user?.profileImage || "");
-  }, [user?.nickname, user?.profileImage]);
-
-  const handleFileClick = () => {
-    if (isEditing) {
-      fileInputRef.current?.click();
-    }
-  };
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setTempProfileImage(reader.result);
-      };
+      reader.onloadend = () => setTempProfileImage(reader.result);
       reader.readAsDataURL(file);
     }
   };
@@ -515,80 +520,82 @@ const ProfileView = ({ user, handleLogout, favoritesCount, onUpdateProfile, revi
     setIsEditing(false);
   };
 
-  const handleCancel = () => {
-    setNewNickname(user?.nickname || "");
-    setTempProfileImage(user?.profileImage || "");
-    setIsEditing(false);
-  };
+  if (viewMode === 'reviews') {
+    return (
+      <div className="flex flex-col h-full bg-slate-50 animate-[fade-in_0.4s_ease-out]">
+        <div className="p-6 bg-white border-b sticky top-0 z-10 flex items-center gap-4">
+          <button onClick={() => setViewMode('main')} className="p-2 hover:bg-slate-100 rounded-full transition-colors"><ChevronLeft size={20} /></button>
+          <h2 className="text-xl font-black text-gray-800">작성한 리뷰 ({myReviews.length})</h2>
+        </div>
+        <div className="p-4 space-y-4 overflow-y-auto pb-20 no-scrollbar">
+          {myReviews.length === 0 ? (
+            <div className="py-20 text-center text-gray-300 italic">작성한 리뷰가 없습니다.</div>
+          ) : (
+            myReviews.map(review => (
+              <div key={review.id} className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+                <div className="flex justify-between items-start mb-3">
+                  <div><h4 className="font-bold text-sm text-[#45a494]">{review.location}</h4></div>
+                  <div className="flex gap-2">
+                    <button onClick={() => { setEditingReviewId(review.id); setEditComment(review.comment); }} className="p-1.5 text-slate-400 hover:text-blue-500 transition-colors"><Edit2 size={14} /></button>
+                    <button onClick={() => onDeleteReview(review.id)} className="p-1.5 text-slate-400 hover:text-red-500 transition-colors"><Trash2 size={14} /></button>
+                  </div>
+                </div>
+                {editingReviewId === review.id ? (
+                  <div className="space-y-2">
+                    <textarea value={editComment} onChange={(e) => setEditComment(e.target.value)} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-[#45a494]/20" rows="3" />
+                    <div className="flex gap-2">
+                      <button onClick={() => setEditingReviewId(null)} className="flex-1 py-2 bg-slate-100 rounded-lg text-xs font-bold">취소</button>
+                      <button onClick={() => { onUpdateReview(review.id, { comment: editComment }); setEditingReviewId(null); }} className="flex-1 py-2 bg-[#45a494] text-white rounded-lg text-xs font-bold shadow-sm">저장</button>
+                    </div>
+                  </div>
+                ) : (<p className="text-sm text-gray-600 leading-relaxed">{review.comment}</p>)}
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="p-6 flex flex-col min-h-full animate-[fade-in_0.4s_ease-out] bg-white">
+    <div className="p-6 flex flex-col h-full animate-[fade-in_0.4s_ease-out] bg-white">
       <div className="flex justify-between items-center mb-10">
         <h2 className="text-2xl font-black text-[#45a494] tracking-tight">My page</h2>
-        <button type="button" onClick={handleLogout} className="p-2 text-gray-400 hover:text-red-500 transition-colors" aria-label="로그아웃">
-          <LogOut size={20} />
-        </button>
+        <button onClick={handleLogout} className="p-2 text-gray-400 hover:text-red-500 transition-colors"><LogOut size={20} /></button>
       </div>
-
       <div className="flex flex-col items-center">
-        <div className="relative group" onClick={handleFileClick}>
+        <div className="relative" onClick={() => isEditing && fileInputRef.current?.click()}>
           <div className={`w-24 h-24 bg-slate-100 rounded-full flex items-center justify-center mb-4 border-4 border-white shadow-xl overflow-hidden ${isEditing ? 'cursor-pointer' : ''}`}>
-            {tempProfileImage ? (
-              <img src={tempProfileImage} alt="프로필" className="w-full h-full object-cover" />
-            ) : (
-              <User size={48} className="text-gray-300" />
-            )}
+            {tempProfileImage ? <img src={tempProfileImage} alt="Profile" className="w-full h-full object-cover" /> : <User size={48} className="text-gray-300" />}
           </div>
-          {isEditing && (
-            <div className="absolute inset-0 bg-black/30 rounded-full flex items-center justify-center mb-4 cursor-pointer">
-              <Camera size={24} className="text-white opacity-90" />
-            </div>
-          )}
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleFileChange}
-            className="hidden"
-            accept="image/*"
-          />
+          {isEditing && <div className="absolute inset-0 bg-black/30 rounded-full flex items-center justify-center mb-4 cursor-pointer"><Camera size={24} className="text-white opacity-90" /></div>}
+          <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
         </div>
-
         {isEditing ? (
-          <div className="w-full space-y-4 px-4 mt-2">
-            <div className="flex flex-col items-center gap-1">
-              <input
-                type="text"
-                value={newNickname}
-                onChange={(e) => setNewNickname(e.target.value)}
-                className="w-full border-b-2 border-[#45a494] text-center font-black text-xl py-1 focus:outline-none"
-                placeholder="새 닉네임"
-              />
-              <p className="text-[10px] text-gray-400 mt-1">사진을 클릭하여 변경할 수 있습니다.</p>
-            </div>
+          <div className="w-full space-y-4 px-4 mt-2 text-center">
+            <input type="text" value={newNickname} onChange={(e) => setNewNickname(e.target.value)} className="w-full border-b-2 border-[#45a494] text-center font-black text-xl py-1 focus:outline-none" placeholder="새 닉네임" />
+            <p className="text-[10px] text-gray-400">사진을 클릭하여 사진첩에서 선택할 수 있습니다.</p>
             <div className="flex gap-2 pt-2">
-              <button type="button" onClick={handleCancel} className="flex-1 bg-gray-100 text-gray-500 py-3 rounded-2xl text-xs font-bold flex items-center justify-center gap-1 active:scale-95 transition-transform">
-                <X size={14} /> 취소
-              </button>
-              <button type="button" onClick={handleSave} className="flex-[2] bg-[#45a494] text-white py-3 rounded-2xl text-xs font-bold flex items-center justify-center gap-1 shadow-lg shadow-[#45a494]/20 active:scale-95 transition-transform">
-                <Check size={14} /> 변경 내용 저장
-              </button>
+              <button onClick={() => { setIsEditing(false); setNewNickname(user?.nickname || ""); setTempProfileImage(user?.profileImage || ""); }} className="flex-1 bg-gray-100 text-gray-500 py-3 rounded-2xl text-xs font-bold transition-all active:scale-95">취소</button>
+              <button onClick={handleSave} className="flex-[2] bg-[#45a494] text-white py-3 rounded-2xl text-xs font-bold shadow-lg shadow-[#45a494]/20 transition-all active:scale-95">변경 내용 저장</button>
             </div>
           </div>
         ) : (
           <>
-            <div className="flex items-center gap-2 mt-2">
-              <h3 className="text-xl font-black text-gray-800">{user?.nickname || '사용자'}</h3>
-              <button type="button" onClick={() => setIsEditing(true)} className="p-1.5 bg-gray-50 rounded-lg text-gray-300 hover:text-[#45a494] transition-colors" aria-label="프로필 수정">
-                <Edit2 size={14} />
-              </button>
+            <div className="flex items-center gap-2">
+              <h3 className="text-xl font-black text-gray-800">{user?.nickname}</h3>
+              <button onClick={() => setIsEditing(true)} className="p-1.5 text-gray-300 hover:text-[#45a494] transition-colors"><Edit2 size={14} /></button>
             </div>
-            <p className="text-gray-400 text-xs mb-8 mt-1">{user?.email || ''}</p>
+            <p className="text-gray-400 text-xs mb-8">{user?.email}</p>
           </>
         )}
       </div>
-
-      <div className="grid grid-cols-2 gap-4 w-full mt-6">
-        <div className="bg-gray-50 p-5 rounded-3xl border border-gray-100 text-center">
+      <div className="grid grid-cols-2 gap-4 w-full mt-8">
+        {/* '찜한 목록' 클릭 시 favorites 탭으로 이동하도록 버튼으로 수정 */}
+        <button 
+          onClick={() => setActiveTab('favorites')}
+          className="bg-gray-50 p-5 rounded-3xl border border-gray-100 text-center active:bg-slate-100 transition-colors"
+        >
           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">찜한 목록</p>
           <p className="text-2xl font-black text-[#45a494]">{favoritesCount}</p>
         </div>
@@ -1102,142 +1109,18 @@ function SimpleApp() {
         <button type="button" onClick={() => setActiveTab('home')} className={`flex flex-col items-center gap-1 ${activeTab === 'home' ? 'text-blue-600' : 'text-gray-300'}`}>
           <Home size={22} /><span className="text-[10px] font-black tracking-tighter">홈</span>
         </button>
-        <button type="button" onClick={() => setActiveTab('favorites')} className={`flex flex-col items-center gap-1 ${activeTab === 'favorites' ? 'text-blue-600' : 'text-gray-300'}`}>
-          <Heart size={22} className={activeTab === 'favorites' ? 'fill-current' : ''} /><span className="text-[10px] font-black tracking-tighter">찜</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setIsModalOpen(true)}
-          className="w-14 h-14 bg-gradient-to-br from-blue-500 to-blue-700 rounded-2xl -mt-8 flex items-center justify-center text-white shadow-xl active:scale-90 transition-all border-4 border-white"
-        >
-          <Plus size={30} strokeWidth={3} />
-        </button>
-        <button type="button" onClick={() => setActiveTab('map')} className={`flex flex-col items-center gap-1 ${activeTab === 'map' ? 'text-blue-600' : 'text-gray-300'}`}>
-          <MapIcon size={22} /><span className="text-[10px] font-black tracking-tighter">지도</span>
-        </button>
-        <button type="button" onClick={() => setActiveTab('profile')} className={`flex flex-col items-center gap-1 ${activeTab === 'profile' ? 'text-blue-600' : 'text-gray-300'}`}>
-          <User size={22} /><span className="text-[10px] font-black tracking-tighter">마이</span>
+        <button onClick={() => setViewMode('reviews')} className="bg-gray-50 p-5 rounded-3xl border border-gray-100 text-center active:bg-slate-100 transition-colors">
+          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">작성 리뷰</p>
+          <p className="text-2xl font-black text-[#45a494]">{myReviews.length}</p>
         </button>
       </div>
-
-      {/* 리뷰 작성 모달 */}
-      {isModalOpen && (
-        <div className="absolute inset-0 z-50 bg-black/60 flex items-end">
-          <div className="w-full bg-white rounded-t-[40px] p-8 shadow-2xl overflow-y-auto max-h-[92%] animate-in slide-in-from-bottom duration-300">
-            <div className="flex justify-between items-center mb-8">
-              <div>
-                <h2 className="text-2xl font-black text-gray-800 tracking-tight">상세 리뷰 작성</h2>
-                <p className="text-[11px] font-bold text-blue-500 mt-1 uppercase tracking-widest">Share your experience</p>
-              </div>
-              <button type="button" onClick={() => setIsModalOpen(false)} className="p-2.5 bg-gray-50 rounded-full text-gray-400">
-                <X size={20} />
-              </button>
-            </div>
-            <form onSubmit={handleAddReview} className="space-y-6 pb-6">
-              <div className="space-y-2">
-                <label className="text-[11px] font-black text-gray-400 uppercase ml-1">Photo Attachment</label>
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => fileInputRef.current?.click()}
-                  onKeyDown={(e) => e.key === 'Enter' && fileInputRef.current?.click()}
-                  className="w-full h-44 bg-gray-50 rounded-[32px] border-2 border-dashed border-gray-200 flex flex-col items-center justify-center overflow-hidden cursor-pointer hover:bg-gray-100 transition-all active:scale-[0.98]"
-                >
-                  {newReview.imagePreview ? (
-                    <img src={newReview.imagePreview} className="w-full h-full object-cover" alt="Preview" />
-                  ) : (
-                    <>
-                      <Camera size={32} className="text-blue-500 mb-2 opacity-40" />
-                      <span className="text-xs text-gray-400 font-bold">사진을 추가해 주세요</span>
-                    </>
-                  )}
-                </div>
-                <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) setNewReview((prev) => ({ ...prev, imagePreview: URL.createObjectURL(file) }));
-                }} />
-              </div>
-              <div className="space-y-2 text-center py-2 bg-gray-50/50 rounded-3xl border border-gray-100">
-                <label className="text-[11px] font-black text-gray-400 uppercase">Rating Score</label>
-                <div className="flex justify-center gap-3">
-                  {[1, 2, 3, 4, 5].map((num) => (
-                    <button
-                      key={num}
-                      type="button"
-                      onClick={() => setNewReview((prev) => ({ ...prev, rating: num }))}
-                      className="transition-transform active:scale-75"
-                    >
-                      <Star size={36} className={num <= newReview.rating ? 'text-yellow-400 fill-current' : 'text-gray-200'} />
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="space-y-2">
-                <label className="text-[11px] font-black text-gray-400 uppercase ml-1">Location Name</label>
-                <input
-                  type="text"
-                  className="w-full bg-gray-50 rounded-2xl p-4 outline-none font-extrabold focus:bg-white border-2 border-transparent focus:border-blue-500/10 transition-all text-gray-800"
-                  placeholder="어디를 방문하셨나요?"
-                  value={newReview.location}
-                  onChange={(e) => setNewReview((prev) => ({ ...prev, location: e.target.value }))}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-[11px] font-black text-gray-400 uppercase ml-1">Category</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {CATEGORIES.slice(1).map((cat) => (
-                    <button
-                      key={cat}
-                      type="button"
-                      onClick={() => setNewReview((prev) => ({ ...prev, category: cat }))}
-                      className={`py-3 rounded-2xl text-[11px] font-extrabold transition-all border-2 ${newReview.category === cat ? 'bg-blue-600 text-white border-blue-600 shadow-lg' : 'bg-white text-gray-400 border-gray-100 hover:border-blue-200'}`}
-                    >
-                      {cat}
-                    </button>
-                  ))}
-                </div>
-                {newReview.category === '기타' && (
-                  <input
-                    type="text"
-                    className="w-full bg-blue-50/50 rounded-2xl p-4 mt-2 outline-none text-sm font-bold border-2 border-blue-100"
-                    placeholder="직접 입력 (예: 미술관, 오름)"
-                    value={newReview.customCategory}
-                    onChange={(e) => setNewReview((prev) => ({ ...prev, customCategory: e.target.value }))}
-                  />
-                )}
-              </div>
-              <div className="space-y-2">
-                <label className="text-[11px] font-black text-gray-400 uppercase ml-1">Your Review</label>
-                <textarea
-                  className="w-full bg-gray-50 rounded-2xl p-5 h-32 outline-none resize-none focus:bg-white border-2 border-transparent focus:border-blue-500/10 transition-all text-sm leading-relaxed"
-                  placeholder="무장애 시설 정보와 함께 솔직한 경험을 공유해 주세요."
-                  value={newReview.comment}
-                  onChange={(e) => setNewReview((prev) => ({ ...prev, comment: e.target.value }))}
-                  required
-                />
-              </div>
-              <button type="submit" className="w-full bg-blue-600 text-white font-black py-5 rounded-[24px] shadow-xl shadow-blue-500/20 active:scale-95 transition-all">
-                리뷰 업로드하기
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      <style>{`
-        .no-scrollbar::-webkit-scrollbar { display: none; }
-        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        @keyframes slide-in-bottom { from { transform: translateY(100%); } to { transform: translateY(0); } }
-        .animate-in { animation: slide-in-bottom 0.4s cubic-bezier(0.16, 1, 0.3, 1); }
-      `}</style>
     </div>
   );
-}
+};
 
 // --- 메인 App 컴포넌트 ---
 
-const App = () => {
+export default function App() {
   const [activeTab, setActiveTab] = useState('home');
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1249,16 +1132,6 @@ const App = () => {
     const saved = localStorage.getItem('gochigage-favorites');
     return saved ? JSON.parse(saved) : [];
   });
-  const [isAddReviewModalOpen, setIsAddReviewModalOpen] = useState(false);
-  const [newReview, setNewReview] = useState({
-    location: "",
-    comment: "",
-    category: "명소",
-    customCategory: "",
-    rating: 5,
-    imagePreview: null
-  });
-  const addReviewFileInputRef = useRef(null);
 
   const [isSignUpMode, setIsSignUpMode] = useState(false);
   const [email, setEmail] = useState("");
@@ -1278,13 +1151,12 @@ const App = () => {
 
   useEffect(() => {
     localStorage.setItem('gochigage-favorites', JSON.stringify(favorites));
-  }, [favorites]);
+    localStorage.setItem('gochigage-reviews', JSON.stringify(reviews));
+  }, [favorites, reviews]);
 
   const toggleFavorite = (id, e) => {
     if (e) e.stopPropagation();
-    setFavorites(prev => 
-      prev.includes(id) ? prev.filter(favId => favId !== id) : [...prev, id]
-    );
+    setFavorites(prev => prev.includes(id) ? prev.filter(favId => favId !== id) : [...prev, id]);
   };
 
   const handleAuth = async (e) => {
@@ -1294,82 +1166,89 @@ const App = () => {
       return;
     }
     setAuthLoading(true);
-    setAuthMessage({ type: "", text: "" });
-
     const { data, error } = isSignUpMode 
       ? await MockAuth.signUp({ email, password, nickname })
       : await MockAuth.signInWithPassword({ email, password });
-
-    if (error) {
-      setAuthMessage({ type: "error", text: error.message });
-    } else {
-      if (isSignUpMode) {
-        setAuthMessage({ type: "success", text: "회원가입 성공! 이제 로그인해주세요." });
-        setIsSignUpMode(false);
-      } else {
-        setUser(data.user);
-        setActiveTab('home');
-        setEmail("");
-        setPassword("");
-        setNickname("");
-      }
+    if (error) setAuthMessage({ type: "error", text: error.message });
+    else {
+      if (isSignUpMode) { setAuthMessage({ type: "success", text: "가입 성공! 로그인해주세요." }); setIsSignUpMode(false); }
+      else { setUser(data.user); setActiveTab('home'); }
     }
     setAuthLoading(false);
-  };
-
-  const handleLogout = async () => {
-    await MockAuth.signOut();
-    setUser(null);
-    setActiveTab('home');
   };
 
   const updateProfile = async (updates) => {
     if (!user) return;
     const { error } = await MockAuth.updateProfile(user.id, updates);
-    if (!error) {
-      setUser({ ...user, ...updates });
-    }
+    if (!error) setUser({ ...user, ...updates });
   };
 
-  const handleAddReview = (e) => {
-    e.preventDefault();
-    const finalCategory = newReview.category === "기타" ? newReview.customCategory : newReview.category;
-    const reviewToAdd = {
-      id: Date.now(),
-      user: user?.nickname || "나의 계정",
-      location: newReview.location,
-      category: finalCategory || "기타",
-      rating: newReview.rating,
-      comment: newReview.comment,
-      image: newReview.imagePreview || "https://images.unsplash.com/photo-1501785888041-af3ef285b470?q=80&w=1000",
-      likes: 0,
-      replies: 0,
-      tags: ["신규", finalCategory].filter(Boolean),
-      isLiked: false,
-      coords: { top: '50%', left: '50%' },
-      details: "새로 등록된 장소입니다."
+  const saveNewReview = (reviewData) => {
+    if (!user) { setActiveTab('profile'); return; }
+    const newReview = {
+      id: Date.now(), userId: user.id, user: user.nickname, rating: 5.0,
+      likes: 0, replies: 0, tags: ["신규리뷰"], ...reviewData
     };
-    setReviews((prev) => [reviewToAdd, ...prev]);
-    setNewReview({ location: "", comment: "", category: "명소", customCategory: "", rating: 5, imagePreview: null });
-    setIsAddReviewModalOpen(false);
+    setReviews([newReview, ...reviews]);
     setActiveTab('home');
   };
 
   const tags = ['전체', ...new Set(reviews.flatMap((r) => r.tags || []))];
-
   const filteredReviews = reviews
     .filter((r) => selectedTag === '전체' || (r.tags || []).includes(selectedTag))
-    .filter((r) => 
-      r.location.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      (r.user && r.user.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (r.tags && r.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase())))
-    );
+    .filter((r) => r.location.toLowerCase().includes(searchQuery.toLowerCase()) || r.user.toLowerCase().includes(searchQuery.toLowerCase()));
+  const myReviews = reviews.filter(r => r.userId === user?.id || (r.userId === "admin" && user?.email === "admin@test.com"));
 
-  if (loading) return (
-    <div className="flex items-center justify-center min-h-screen bg-white">
-      <Loader2 className="w-8 h-8 text-[#45a494] animate-spin" />
-    </div>
-  );
+  // 지도 뷰 (팀원 로직 보존)
+  const MapView = () => {
+    const mapRef = useRef(null);
+    const [selectedRegion, setSelectedRegion] = useState(REGIONS[0].value);
+    const [dropdownOpen, setDropdownOpen] = useState(false);
+
+    useEffect(() => {
+      loadKakaoMap('cf864dc2f0d80f5ca499d30ea483efd6').then((kakao) => {
+        if (!mapRef.current) return;
+        const map = new kakao.maps.Map(mapRef.current, { center: new kakao.maps.LatLng(33.450701, 126.570667), level: 3 });
+        const region = REGIONS.find((r) => r.value === selectedRegion);
+        fetch(region.file).then(r => r.arrayBuffer()).then(buf => {
+          const text = new TextDecoder('euc-kr').decode(buf);
+          const rows = text.trim().split(/\r?\n/); rows.shift();
+          rows.forEach((line, i) => {
+            const cols = line.split(',');
+            const lat = parseFloat(cols[0]); const lng = parseFloat(cols[1]);
+            if (!isNaN(lat) && !isNaN(lng)) {
+              const pos = new kakao.maps.LatLng(lat, lng);
+              if (i === 0) map.setCenter(pos);
+              new kakao.maps.Marker({ position: pos, map: map });
+            }
+          });
+        });
+      });
+    }, [selectedRegion]);
+
+    return (
+      <div className="h-full flex flex-col">
+        <div className="p-4 bg-white border-b z-10 flex flex-col gap-2">
+          <div className="relative">
+            <button onClick={() => setDropdownOpen(!dropdownOpen)} className="w-full flex items-center justify-between px-3 py-3 bg-gray-50 border border-gray-100 rounded-xl text-sm font-bold text-gray-700">
+              <span>{REGIONS.find(r => r.value === selectedRegion)?.label}</span>
+              <ChevronDown className={`w-4 h-4 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {dropdownOpen && (
+              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-100 rounded-xl shadow-xl py-1 z-20 max-h-48 overflow-y-auto no-scrollbar">
+                {REGIONS.map((r) => (
+                  <button key={r.value} onClick={() => { setSelectedRegion(r.value); setDropdownOpen(false); }} className={`w-full px-4 py-3 text-left text-sm hover:bg-gray-50 ${selectedRegion === r.value ? 'text-[#45a494] font-bold' : ''}`}>{r.label}</button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex-1 relative no-scrollbar"><div ref={mapRef} className="absolute inset-0 w-full h-full" /></div>
+      </div>
+    );
+  };
+
+  if (loading) return <div className="flex items-center justify-center min-h-screen bg-white"><Loader2 className="w-8 h-8 text-[#45a494] animate-spin" /></div>;
 
   return (
     <div className="flex justify-center bg-gray-100 min-h-screen font-sans">
@@ -1394,216 +1273,58 @@ const App = () => {
             user ? (
               <ProfileView 
                 user={user} 
-                handleLogout={handleLogout} 
+                handleLogout={async () => { await MockAuth.signOut(); setUser(null); setActiveTab('home'); }} 
                 favoritesCount={favorites.length} 
-                onUpdateProfile={updateProfile}
-                reviewCount={reviews.filter((r) => r.user === user?.nickname).length}
+                onUpdateProfile={updateProfile} 
+                myReviews={myReviews} 
+                onDeleteReview={(id) => setReviews(r => r.filter(x => x.id !== id))} 
+                onUpdateReview={(id, upd) => setReviews(r => r.map(x => x.id === id ? {...x, ...upd} : x))}
+                setActiveTab={setActiveTab} // setActiveTab 함수 전달
               />
             ) : (
-              <AuthView 
-                isSignUpMode={isSignUpMode}
-                setIsSignUpMode={setIsSignUpMode}
-                email={email}
-                setEmail={setEmail}
-                password={password}
-                setPassword={setPassword}
-                nickname={nickname}
-                setNickname={setNickname}
-                authLoading={authLoading}
-                authMessage={authMessage}
-                handleAuth={handleAuth}
-              />
+              <AuthView isSignUpMode={isSignUpMode} setIsSignUpMode={setIsSignUpMode} email={email} setEmail={setEmail} password={password} setPassword={setPassword} nickname={nickname} setNickname={setNickname} authLoading={authLoading} authMessage={authMessage} handleAuth={handleAuth} />
             )
           )}
+          
+          {activeTab === 'write' && <CreateReviewView onSave={saveNewReview} onCancel={() => setActiveTab('home')} />}
           
           {activeTab === 'favorites' && (
             <div className="animate-[fade-in_0.4s_ease-out]">
               <div className="p-6 bg-white sticky top-0 z-10">
-                {/* 제목 색상 변경: text-[#45a494] */}
                 <h2 className="text-2xl font-black text-[#45a494] tracking-tight">내가 찜한 장소</h2>
               </div>
-              
               <div className="px-6 py-2 border-b border-gray-100 bg-white">
-                {/* 문구 변경 및 위치 이동: 총 n개의 찜 */}
                 <p className="text-xs font-bold text-gray-400">총 {favorites.length}개의 찜</p>
               </div>
-
               <div className="p-4 space-y-6">
-                {favorites.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-20 text-gray-300">
-                    <Heart size={48} className="mb-4 opacity-20" />
-                    <p className="text-sm font-bold">찜한 장소가 아직 없습니다.</p>
-                  </div>
-                ) : (
-                  reviews.filter(r => favorites.includes(r.id)).map(review => (
-                    <div key={review.id} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 mb-4">
-                      <div className="relative h-48">
-                        <SafeImage src={review.image} alt={review.location} className="w-full h-full object-cover" />
-                        <button onClick={() => toggleFavorite(review.id)} className="absolute top-4 right-4 p-2 bg-red-50 rounded-full">
-                          <Heart className="w-5 h-5 fill-red-500 text-red-500" />
-                        </button>
-                      </div>
-                      <div className="p-4">
-                        <h3 className="font-bold text-lg">{review.location}</h3>
-                        <p className="text-xs text-gray-400">{review.user}님의 기록</p>
-                      </div>
-                    </div>
-                  ))
-                )}
+                {favorites.length === 0 ? (<div className="py-20 text-center text-gray-300 italic">찜한 장소가 없습니다.</div>) : (reviews.filter(r => favorites.includes(r.id)).map(review => (<div key={review.id} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 mb-4"><div className="relative h-48"><SafeImage src={review.image} alt={review.location} className="w-full h-full object-cover" /><button onClick={() => toggleFavorite(review.id)} className="absolute top-4 right-4 p-2 bg-red-50 rounded-full"><Heart className="w-5 h-5 fill-red-500 text-red-500" /></button></div><div className="p-4"><h3 className="font-bold text-lg">{review.location}</h3></div></div>)))}
               </div>
             </div>
           )}
-
-          {activeTab === 'map' && (
-            <div className="h-full flex flex-col min-h-[500px] animate-[fade-in_0.4s_ease-out]">
-              <MapViewKakao />
-            </div>
-          )}
+          {activeTab === 'map' && <MapView />}
         </main>
 
         <nav className="fixed bottom-0 w-full max-w-md bg-white/80 backdrop-blur-lg border-t border-gray-100 px-6 py-3 flex justify-between items-center z-20">
-          <button onClick={() => setActiveTab('home')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'home' ? 'text-[#45a494] scale-110 font-bold' : 'text-gray-400'}`}>
-            <Home className="w-6 h-6" /><span className="text-[10px]">홈</span>
-          </button>
-          <button onClick={() => setActiveTab('map')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'map' ? 'text-[#45a494] scale-110 font-bold' : 'text-gray-400'}`}>
-            <MapIcon className="w-6 h-6" /><span className="text-[10px]">탐색</span>
-          </button>
+          <button onClick={() => setActiveTab('home')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'home' ? 'text-[#45a494] scale-110 font-bold' : 'text-gray-400'}`}><Home className="w-6 h-6" /><span className="text-[10px]">홈</span></button>
+          <button onClick={() => setActiveTab('map')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'map' ? 'text-[#45a494] scale-110 font-bold' : 'text-gray-400'}`}><MapIcon className="w-6 h-6" /><span className="text-[10px]">탐색</span></button>
           <div className="relative -top-5">
-            <button
-              type="button"
-              onClick={() => setIsAddReviewModalOpen(true)}
-              className="w-14 h-14 bg-gradient-to-tr from-[#45a494] to-[#68c9b9] rounded-full shadow-lg shadow-[#45a494]/30 flex items-center justify-center text-white active:scale-95 transition-transform"
-              aria-label="리뷰 작성"
+            <button 
+              onClick={() => setActiveTab('write')}
+              className="w-14 h-14 bg-gradient-to-tr from-[#45a494] to-[#68c9b9] rounded-full shadow-lg text-white flex items-center justify-center transform active:scale-95 transition-transform"
             >
-              <Plus className="w-6 h-6" />
+              <span className="text-3xl font-light">+</span>
             </button>
           </div>
-          <button onClick={() => setActiveTab('favorites')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'favorites' ? 'text-red-500 scale-110 font-bold' : 'text-gray-400'}`}>
-            <Heart className={`w-6 h-6 ${activeTab === 'favorites' ? 'fill-red-500' : ''}`} /><span className="text-[10px]">찜</span>
-          </button>
-          <button onClick={() => setActiveTab('profile')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'profile' ? 'text-[#45a494] scale-110 font-bold' : 'text-gray-400'}`}>
-            <User className="w-6 h-6" /> <span className="text-[10px]">마이</span>
-          </button>
+          <button onClick={() => setActiveTab('favorites')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'favorites' ? 'text-red-500 scale-110 font-bold' : 'text-gray-400'}`}><Heart className={`w-6 h-6 ${activeTab === 'favorites' ? 'fill-red-500' : ''}`} /><span className="text-[10px]">찜</span></button>
+          <button onClick={() => setActiveTab('profile')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'profile' ? 'text-[#45a494] scale-110 font-bold' : 'text-gray-400'}`}><User className="w-6 h-6" /><span className="text-[10px]">마이</span></button>
         </nav>
-
-        {/* 리뷰 작성 모달 (탭 가운데 + 버튼) */}
-        {isAddReviewModalOpen && (
-          <div className="fixed inset-0 z-50 bg-black/60 flex items-end justify-center" onClick={() => setIsAddReviewModalOpen(false)}>
-            <div className="w-full max-w-md bg-white rounded-t-[24px] p-6 shadow-2xl overflow-y-auto max-h-[90vh] animate-in slide-in-from-bottom duration-300" onClick={(e) => e.stopPropagation()}>
-              <div className="flex justify-between items-center mb-6">
-                <h2 className="text-xl font-black text-[#45a494] tracking-tight">새 리뷰 작성</h2>
-                <button type="button" onClick={() => setIsAddReviewModalOpen(false)} className="p-2 rounded-full text-gray-400 hover:bg-gray-100">
-                  <X size={20} />
-                </button>
-              </div>
-              <form onSubmit={handleAddReview} className="space-y-5 pb-6">
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-gray-500 uppercase">사진 (선택)</label>
-                  <div
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => addReviewFileInputRef.current?.click()}
-                    onKeyDown={(e) => e.key === 'Enter' && addReviewFileInputRef.current?.click()}
-                    className="w-full h-36 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-100 transition-colors"
-                  >
-                    {newReview.imagePreview ? (
-                      <img src={newReview.imagePreview} alt="미리보기" className="w-full h-full object-cover rounded-2xl" />
-                    ) : (
-                      <>
-                        <Camera size={28} className="text-[#45a494] opacity-50 mb-1" />
-                        <span className="text-xs text-gray-400 font-bold">탭하여 사진 추가</span>
-                      </>
-                    )}
-                  </div>
-                  <input
-                    type="file"
-                    ref={addReviewFileInputRef}
-                    className="hidden"
-                    accept="image/*"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) setNewReview((prev) => ({ ...prev, imagePreview: URL.createObjectURL(file) }));
-                    }}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-gray-500 uppercase">별점</label>
-                  <div className="flex gap-2">
-                    {[1, 2, 3, 4, 5].map((num) => (
-                      <button
-                        key={num}
-                        type="button"
-                        onClick={() => setNewReview((prev) => ({ ...prev, rating: num }))}
-                        className="p-1 transition-transform active:scale-90"
-                      >
-                        <Star size={28} className={num <= newReview.rating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-200'} />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-gray-500 uppercase">장소명</label>
-                  <input
-                    type="text"
-                    value={newReview.location}
-                    onChange={(e) => setNewReview((prev) => ({ ...prev, location: e.target.value }))}
-                    placeholder="방문한 장소를 입력하세요"
-                    className="w-full bg-gray-50 rounded-xl px-4 py-3 text-sm font-semibold border border-gray-100 focus:outline-none focus:ring-2 focus:ring-[#45a494]/30"
-                    required
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-gray-500 uppercase">카테고리</label>
-                  <div className="flex flex-wrap gap-2">
-                    {CATEGORIES.slice(1).map((cat) => (
-                      <button
-                        key={cat}
-                        type="button"
-                        onClick={() => setNewReview((prev) => ({ ...prev, category: cat }))}
-                        className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${newReview.category === cat ? 'bg-[#45a494] text-white' : 'bg-gray-100 text-gray-500'}`}
-                      >
-                        {cat}
-                      </button>
-                    ))}
-                  </div>
-                  {newReview.category === '기타' && (
-                    <input
-                      type="text"
-                      value={newReview.customCategory}
-                      onChange={(e) => setNewReview((prev) => ({ ...prev, customCategory: e.target.value }))}
-                      placeholder="직접 입력"
-                      className="w-full mt-2 bg-gray-50 rounded-xl px-4 py-3 text-sm border border-gray-100 focus:outline-none focus:ring-2 focus:ring-[#45a494]/30"
-                    />
-                  )}
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-gray-500 uppercase">후기</label>
-                  <textarea
-                    value={newReview.comment}
-                    onChange={(e) => setNewReview((prev) => ({ ...prev, comment: e.target.value }))}
-                    placeholder="무장애 시설 정보와 경험을 공유해 주세요."
-                    className="w-full bg-gray-50 rounded-xl px-4 py-3 h-28 text-sm resize-none border border-gray-100 focus:outline-none focus:ring-2 focus:ring-[#45a494]/30"
-                    required
-                  />
-                </div>
-                <button type="submit" className="w-full bg-[#45a494] text-white font-black py-4 rounded-2xl shadow-lg shadow-[#45a494]/30 active:scale-[0.98] transition-transform">
-                  리뷰 등록하기
-                </button>
-              </form>
-            </div>
-          </div>
-        )}
       </div>
 
       <style>{`
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         @keyframes fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes slide-in-bottom { from { transform: translateY(100%); } to { transform: translateY(0); } }
-        .animate-in.slide-in-from-bottom { animation: slide-in-bottom 0.3s ease-out; }
       `}</style>
     </div>
   );
-};
-
-export default App;
+}
