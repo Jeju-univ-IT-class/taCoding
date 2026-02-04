@@ -246,11 +246,16 @@ const AuthView = ({ isSignUpMode, setIsSignUpMode, email, setEmail, password, se
   </div>
 );
 
-const ProfileView = ({ user, handleLogout, favoritesCount, onUpdateProfile }) => {
+const ProfileView = ({ user, handleLogout, favoritesCount, onUpdateProfile, reviewCount = 0 }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [newNickname, setNewNickname] = useState(user?.nickname || "");
   const [tempProfileImage, setTempProfileImage] = useState(user?.profileImage || "");
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    setNewNickname(user?.nickname || "");
+    setTempProfileImage(user?.profileImage || "");
+  }, [user?.nickname, user?.profileImage]);
 
   const handleFileClick = () => {
     if (isEditing) {
@@ -281,10 +286,10 @@ const ProfileView = ({ user, handleLogout, favoritesCount, onUpdateProfile }) =>
   };
 
   return (
-    <div className="p-6 flex flex-col h-full animate-[fade-in_0.4s_ease-out] bg-white">
+    <div className="p-6 flex flex-col min-h-full animate-[fade-in_0.4s_ease-out] bg-white">
       <div className="flex justify-between items-center mb-10">
         <h2 className="text-2xl font-black text-[#45a494] tracking-tight">My page</h2>
-        <button onClick={handleLogout} className="p-2 text-gray-400 hover:text-red-500 transition-colors">
+        <button type="button" onClick={handleLogout} className="p-2 text-gray-400 hover:text-red-500 transition-colors" aria-label="로그아웃">
           <LogOut size={20} />
         </button>
       </div>
@@ -293,7 +298,7 @@ const ProfileView = ({ user, handleLogout, favoritesCount, onUpdateProfile }) =>
         <div className="relative group" onClick={handleFileClick}>
           <div className={`w-24 h-24 bg-slate-100 rounded-full flex items-center justify-center mb-4 border-4 border-white shadow-xl overflow-hidden ${isEditing ? 'cursor-pointer' : ''}`}>
             {tempProfileImage ? (
-              <img src={tempProfileImage} alt="Profile" className="w-full h-full object-cover" />
+              <img src={tempProfileImage} alt="프로필" className="w-full h-full object-cover" />
             ) : (
               <User size={48} className="text-gray-300" />
             )}
@@ -303,11 +308,11 @@ const ProfileView = ({ user, handleLogout, favoritesCount, onUpdateProfile }) =>
               <Camera size={24} className="text-white opacity-90" />
             </div>
           )}
-          <input 
-            type="file" 
-            ref={fileInputRef} 
-            onChange={handleFileChange} 
-            className="hidden" 
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileChange}
+            className="hidden"
             accept="image/*"
           />
         </div>
@@ -315,8 +320,8 @@ const ProfileView = ({ user, handleLogout, favoritesCount, onUpdateProfile }) =>
         {isEditing ? (
           <div className="w-full space-y-4 px-4 mt-2">
             <div className="flex flex-col items-center gap-1">
-              <input 
-                type="text" 
+              <input
+                type="text"
                 value={newNickname}
                 onChange={(e) => setNewNickname(e.target.value)}
                 className="w-full border-b-2 border-[#45a494] text-center font-black text-xl py-1 focus:outline-none"
@@ -324,17 +329,41 @@ const ProfileView = ({ user, handleLogout, favoritesCount, onUpdateProfile }) =>
               />
               <p className="text-[10px] text-gray-400 mt-1">사진을 클릭하여 변경할 수 있습니다.</p>
             </div>
-            
             <div className="flex gap-2 pt-2">
-              <button onClick={handleCancel} className="flex-1 bg-gray-100 text-gray-500 py-3 rounded-2xl text-xs font-bold flex items-center justify-center gap-1 active:scale-95 transition-transform">
+              <button type="button" onClick={handleCancel} className="flex-1 bg-gray-100 text-gray-500 py-3 rounded-2xl text-xs font-bold flex items-center justify-center gap-1 active:scale-95 transition-transform">
                 <X size={14} /> 취소
               </button>
-              <button onClick={handleSave} className="flex-[2] bg-[#45a494] text-white py-3 rounded-2xl text-xs font-bold flex items-center justify-center gap-1 shadow-lg shadow-[#45a494]/20 active:scale-95 transition-transform">
+              <button type="button" onClick={handleSave} className="flex-[2] bg-[#45a494] text-white py-3 rounded-2xl text-xs font-bold flex items-center justify-center gap-1 shadow-lg shadow-[#45a494]/20 active:scale-95 transition-transform">
                 <Check size={14} /> 변경 내용 저장
               </button>
             </div>
           </div>
-        ) : null}
+        ) : (
+          <>
+            <div className="flex items-center gap-2 mt-2">
+              <h3 className="text-xl font-black text-gray-800">{user?.nickname || '사용자'}</h3>
+              <button type="button" onClick={() => setIsEditing(true)} className="p-1.5 bg-gray-50 rounded-lg text-gray-300 hover:text-[#45a494] transition-colors" aria-label="프로필 수정">
+                <Edit2 size={14} />
+              </button>
+            </div>
+            <p className="text-gray-400 text-xs mb-8 mt-1">{user?.email || ''}</p>
+          </>
+        )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-4 w-full mt-6">
+        <div className="bg-gray-50 p-5 rounded-3xl border border-gray-100 text-center">
+          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">찜한 목록</p>
+          <p className="text-2xl font-black text-[#45a494]">{favoritesCount}</p>
+        </div>
+        <div className="bg-gray-50 p-5 rounded-3xl border border-gray-100 text-center">
+          <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">작성 리뷰</p>
+          <p className="text-2xl font-black text-slate-600">{reviewCount}</p>
+        </div>
+      </div>
+
+      <div className="mt-auto pt-10 pb-4 text-center">
+        <p className="text-[10px] text-gray-300 font-bold uppercase tracking-[2px]">GochiGage Account System</p>
       </div>
     </div>
   );
@@ -705,10 +734,21 @@ const App = () => {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTag, setSelectedTag] = useState("전체");
+  const [reviews, setReviews] = useState(REVIEWS);
   const [favorites, setFavorites] = useState(() => {
     const saved = localStorage.getItem('gochigage-favorites');
     return saved ? JSON.parse(saved) : [];
   });
+  const [isAddReviewModalOpen, setIsAddReviewModalOpen] = useState(false);
+  const [newReview, setNewReview] = useState({
+    location: "",
+    comment: "",
+    category: "명소",
+    customCategory: "",
+    rating: 5,
+    imagePreview: null
+  });
+  const addReviewFileInputRef = useRef(null);
 
   const [isSignUpMode, setIsSignUpMode] = useState(false);
   const [email, setEmail] = useState("");
@@ -781,13 +821,37 @@ const App = () => {
     }
   };
 
-  const tags = ['전체', ...new Set(REVIEWS.flatMap((r) => r.tags || []))];
+  const handleAddReview = (e) => {
+    e.preventDefault();
+    const finalCategory = newReview.category === "기타" ? newReview.customCategory : newReview.category;
+    const reviewToAdd = {
+      id: Date.now(),
+      user: user?.nickname || "나의 계정",
+      location: newReview.location,
+      category: finalCategory || "기타",
+      rating: newReview.rating,
+      comment: newReview.comment,
+      image: newReview.imagePreview || "https://images.unsplash.com/photo-1501785888041-af3ef285b470?q=80&w=1000",
+      likes: 0,
+      replies: 0,
+      tags: ["신규", finalCategory].filter(Boolean),
+      isLiked: false,
+      coords: { top: '50%', left: '50%' },
+      details: "새로 등록된 장소입니다."
+    };
+    setReviews((prev) => [reviewToAdd, ...prev]);
+    setNewReview({ location: "", comment: "", category: "명소", customCategory: "", rating: 5, imagePreview: null });
+    setIsAddReviewModalOpen(false);
+    setActiveTab('home');
+  };
 
-  const filteredReviews = REVIEWS
+  const tags = ['전체', ...new Set(reviews.flatMap((r) => r.tags || []))];
+
+  const filteredReviews = reviews
     .filter((r) => selectedTag === '전체' || (r.tags || []).includes(selectedTag))
     .filter((r) => 
       r.location.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      r.user.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (r.user && r.user.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (r.tags && r.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase())))
     );
 
@@ -822,6 +886,7 @@ const App = () => {
                 handleLogout={handleLogout} 
                 favoritesCount={favorites.length} 
                 onUpdateProfile={updateProfile}
+                reviewCount={reviews.filter((r) => r.user === user?.nickname).length}
               />
             ) : (
               <AuthView 
@@ -859,7 +924,7 @@ const App = () => {
                     <p className="text-sm font-bold">찜한 장소가 아직 없습니다.</p>
                   </div>
                 ) : (
-                  REVIEWS.filter(r => favorites.includes(r.id)).map(review => (
+                  reviews.filter(r => favorites.includes(r.id)).map(review => (
                     <div key={review.id} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 mb-4">
                       <div className="relative h-48">
                         <SafeImage src={review.image} alt={review.location} className="w-full h-full object-cover" />
@@ -894,7 +959,14 @@ const App = () => {
             <MapIcon className="w-6 h-6" /><span className="text-[10px]">탐색</span>
           </button>
           <div className="relative -top-5">
-            <button className="w-14 h-14 bg-gradient-to-tr from-[#45a494] to-[#68c9b9] rounded-full shadow-lg shadow-[#45a494]/30 flex items-center justify-center text-white"><Plus /></button>
+            <button
+              type="button"
+              onClick={() => setIsAddReviewModalOpen(true)}
+              className="w-14 h-14 bg-gradient-to-tr from-[#45a494] to-[#68c9b9] rounded-full shadow-lg shadow-[#45a494]/30 flex items-center justify-center text-white active:scale-95 transition-transform"
+              aria-label="리뷰 작성"
+            >
+              <Plus className="w-6 h-6" />
+            </button>
           </div>
           <button onClick={() => setActiveTab('favorites')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'favorites' ? 'text-red-500 scale-110 font-bold' : 'text-gray-400'}`}>
             <Heart className={`w-6 h-6 ${activeTab === 'favorites' ? 'fill-red-500' : ''}`} /><span className="text-[10px]">찜</span>
@@ -903,12 +975,122 @@ const App = () => {
             <User className="w-6 h-6" /> <span className="text-[10px]">마이</span>
           </button>
         </nav>
+
+        {/* 리뷰 작성 모달 (탭 가운데 + 버튼) */}
+        {isAddReviewModalOpen && (
+          <div className="fixed inset-0 z-50 bg-black/60 flex items-end justify-center" onClick={() => setIsAddReviewModalOpen(false)}>
+            <div className="w-full max-w-md bg-white rounded-t-[24px] p-6 shadow-2xl overflow-y-auto max-h-[90vh] animate-in slide-in-from-bottom duration-300" onClick={(e) => e.stopPropagation()}>
+              <div className="flex justify-between items-center mb-6">
+                <h2 className="text-xl font-black text-[#45a494] tracking-tight">새 리뷰 작성</h2>
+                <button type="button" onClick={() => setIsAddReviewModalOpen(false)} className="p-2 rounded-full text-gray-400 hover:bg-gray-100">
+                  <X size={20} />
+                </button>
+              </div>
+              <form onSubmit={handleAddReview} className="space-y-5 pb-6">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-gray-500 uppercase">사진 (선택)</label>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => addReviewFileInputRef.current?.click()}
+                    onKeyDown={(e) => e.key === 'Enter' && addReviewFileInputRef.current?.click()}
+                    className="w-full h-36 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-100 transition-colors"
+                  >
+                    {newReview.imagePreview ? (
+                      <img src={newReview.imagePreview} alt="미리보기" className="w-full h-full object-cover rounded-2xl" />
+                    ) : (
+                      <>
+                        <Camera size={28} className="text-[#45a494] opacity-50 mb-1" />
+                        <span className="text-xs text-gray-400 font-bold">탭하여 사진 추가</span>
+                      </>
+                    )}
+                  </div>
+                  <input
+                    type="file"
+                    ref={addReviewFileInputRef}
+                    className="hidden"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) setNewReview((prev) => ({ ...prev, imagePreview: URL.createObjectURL(file) }));
+                    }}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-gray-500 uppercase">별점</label>
+                  <div className="flex gap-2">
+                    {[1, 2, 3, 4, 5].map((num) => (
+                      <button
+                        key={num}
+                        type="button"
+                        onClick={() => setNewReview((prev) => ({ ...prev, rating: num }))}
+                        className="p-1 transition-transform active:scale-90"
+                      >
+                        <Star size={28} className={num <= newReview.rating ? 'text-yellow-400 fill-yellow-400' : 'text-gray-200'} />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-gray-500 uppercase">장소명</label>
+                  <input
+                    type="text"
+                    value={newReview.location}
+                    onChange={(e) => setNewReview((prev) => ({ ...prev, location: e.target.value }))}
+                    placeholder="방문한 장소를 입력하세요"
+                    className="w-full bg-gray-50 rounded-xl px-4 py-3 text-sm font-semibold border border-gray-100 focus:outline-none focus:ring-2 focus:ring-[#45a494]/30"
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-gray-500 uppercase">카테고리</label>
+                  <div className="flex flex-wrap gap-2">
+                    {CATEGORIES.slice(1).map((cat) => (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => setNewReview((prev) => ({ ...prev, category: cat }))}
+                        className={`px-4 py-2 rounded-full text-xs font-bold transition-all ${newReview.category === cat ? 'bg-[#45a494] text-white' : 'bg-gray-100 text-gray-500'}`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                  {newReview.category === '기타' && (
+                    <input
+                      type="text"
+                      value={newReview.customCategory}
+                      onChange={(e) => setNewReview((prev) => ({ ...prev, customCategory: e.target.value }))}
+                      placeholder="직접 입력"
+                      className="w-full mt-2 bg-gray-50 rounded-xl px-4 py-3 text-sm border border-gray-100 focus:outline-none focus:ring-2 focus:ring-[#45a494]/30"
+                    />
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[11px] font-bold text-gray-500 uppercase">후기</label>
+                  <textarea
+                    value={newReview.comment}
+                    onChange={(e) => setNewReview((prev) => ({ ...prev, comment: e.target.value }))}
+                    placeholder="무장애 시설 정보와 경험을 공유해 주세요."
+                    className="w-full bg-gray-50 rounded-xl px-4 py-3 h-28 text-sm resize-none border border-gray-100 focus:outline-none focus:ring-2 focus:ring-[#45a494]/30"
+                    required
+                  />
+                </div>
+                <button type="submit" className="w-full bg-[#45a494] text-white font-black py-4 rounded-2xl shadow-lg shadow-[#45a494]/30 active:scale-[0.98] transition-transform">
+                  리뷰 등록하기
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
 
       <style>{`
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         @keyframes fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes slide-in-bottom { from { transform: translateY(100%); } to { transform: translateY(0); } }
+        .animate-in.slide-in-from-bottom { animation: slide-in-bottom 0.3s ease-out; }
       `}</style>
     </div>
   );
