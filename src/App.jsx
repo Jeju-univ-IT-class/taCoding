@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Search, Map as MapIcon, Star, Heart, MessageSquare, User, Home, MapPin, ChevronRight, ChevronDown, Filter, ImageOff, Plus, Minus, Navigation, LogOut, Mail, Lock, Loader2, Camera, Edit2, Check, X, TrendingUp, TrendingDown, Accessibility, Bath, Car, Wrench, MoveVertical, Layers, CircleDot } from 'lucide-react';
+import { Search, Map as MapIcon, Star, Heart, MessageSquare, User, Home, MapPin, ChevronRight, ChevronDown, Filter, ImageOff, Plus, Minus, Navigation, LogOut, Mail, Lock, Loader2, Camera, Edit2, Check, X, TrendingUp, TrendingDown, Accessibility, Bath, Car, Wrench, MoveVertical, Layers, CircleDot, Image as ImageIcon } from 'lucide-react';
 import db from './services/db';
 
 /**
@@ -1212,30 +1212,38 @@ export default function App() {
     .filter((r) => r.location.toLowerCase().includes(searchQuery.toLowerCase()) || r.user.toLowerCase().includes(searchQuery.toLowerCase()));
   const myReviews = reviews.filter(r => r.userId === user?.id || (r.userId === "admin" && user?.email === "admin@test.com"));
 
-  // 지도 뷰 (팀원 로직 보존)
+  // 지도 뷰 (팀원 로직 보존) - 상단에서 정의한 MAP_REGIONS와 동일한 데이터 사용
   const MapView = () => {
     const mapRef = useRef(null);
-    const [selectedRegion, setSelectedRegion] = useState(REGIONS[0].value);
+    const [selectedRegion, setSelectedRegion] = useState(MAP_REGIONS[0].value);
     const [dropdownOpen, setDropdownOpen] = useState(false);
 
     useEffect(() => {
       loadKakaoMap('cf864dc2f0d80f5ca499d30ea483efd6').then((kakao) => {
         if (!mapRef.current) return;
-        const map = new kakao.maps.Map(mapRef.current, { center: new kakao.maps.LatLng(33.450701, 126.570667), level: 3 });
-        const region = REGIONS.find((r) => r.value === selectedRegion);
-        fetch(region.file).then(r => r.arrayBuffer()).then(buf => {
-          const text = new TextDecoder('euc-kr').decode(buf);
-          const rows = text.trim().split(/\r?\n/); rows.shift();
-          rows.forEach((line, i) => {
-            const cols = line.split(',');
-            const lat = parseFloat(cols[0]); const lng = parseFloat(cols[1]);
-            if (!isNaN(lat) && !isNaN(lng)) {
-              const pos = new kakao.maps.LatLng(lat, lng);
-              if (i === 0) map.setCenter(pos);
-              new kakao.maps.Marker({ position: pos, map: map });
-            }
-          });
+        const map = new kakao.maps.Map(mapRef.current, {
+          center: new kakao.maps.LatLng(33.450701, 126.570667),
+          level: 3,
         });
+        const region = MAP_REGIONS.find((r) => r.value === selectedRegion);
+        if (!region) return;
+        fetch(region.file)
+          .then((r) => r.arrayBuffer())
+          .then((buf) => {
+            const text = new TextDecoder('euc-kr').decode(buf);
+            const rows = text.trim().split(/\r?\n/);
+            rows.shift();
+            rows.forEach((line, i) => {
+              const cols = line.split(',');
+              const lat = parseFloat(cols[0]);
+              const lng = parseFloat(cols[1]);
+              if (!isNaN(lat) && !isNaN(lng)) {
+                const pos = new kakao.maps.LatLng(lat, lng);
+                if (i === 0) map.setCenter(pos);
+                new kakao.maps.Marker({ position: pos, map });
+              }
+            });
+          });
       });
     }, [selectedRegion]);
 
@@ -1243,20 +1251,38 @@ export default function App() {
       <div className="h-full flex flex-col">
         <div className="p-4 bg-white border-b z-10 flex flex-col gap-2">
           <div className="relative">
-            <button onClick={() => setDropdownOpen(!dropdownOpen)} className="w-full flex items-center justify-between px-3 py-3 bg-gray-50 border border-gray-100 rounded-xl text-sm font-bold text-gray-700">
-              <span>{REGIONS.find(r => r.value === selectedRegion)?.label}</span>
-              <ChevronDown className={`w-4 h-4 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
+            <button
+              onClick={() => setDropdownOpen(!dropdownOpen)}
+              className="w-full flex items-center justify-between px-3 py-3 bg-gray-50 border border-gray-100 rounded-xl text-sm font-bold text-gray-700"
+            >
+              <span>{MAP_REGIONS.find((r) => r.value === selectedRegion)?.label}</span>
+              <ChevronDown
+                className={`w-4 h-4 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`}
+              />
             </button>
             {dropdownOpen && (
               <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-100 rounded-xl shadow-xl py-1 z-20 max-h-48 overflow-y-auto no-scrollbar">
-                {REGIONS.map((r) => (
-                  <button key={r.value} onClick={() => { setSelectedRegion(r.value); setDropdownOpen(false); }} className={`w-full px-4 py-3 text-left text-sm hover:bg-gray-50 ${selectedRegion === r.value ? 'text-[#45a494] font-bold' : ''}`}>{r.label}</button>
+                {MAP_REGIONS.map((r) => (
+                  <button
+                    key={r.value}
+                    onClick={() => {
+                      setSelectedRegion(r.value);
+                      setDropdownOpen(false);
+                    }}
+                    className={`w-full px-4 py-3 text-left text-sm hover:bg-gray-50 ${
+                      selectedRegion === r.value ? 'text-[#45a494] font-bold' : ''
+                    }`}
+                  >
+                    {r.label}
+                  </button>
                 ))}
               </div>
             )}
           </div>
         </div>
-        <div className="flex-1 relative no-scrollbar"><div ref={mapRef} className="absolute inset-0 w-full h-full" /></div>
+        <div className="flex-1 relative no-scrollbar">
+          <div ref={mapRef} className="absolute inset-0 w-full h-full" />
+        </div>
       </div>
     );
   };
