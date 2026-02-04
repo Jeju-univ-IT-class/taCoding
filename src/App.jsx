@@ -1,3 +1,11 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Search, Map as MapIcon, Star, Heart, MessageSquare, User, Home, MapPin, ChevronRight, ChevronDown, Filter, ImageOff, Plus, Minus, Navigation } from 'lucide-react';
+import db from './services/db';
+
+// ============================================================================
+// 섹션 1: 상수 및 유틸리티 함수 (컴포넌트 외부)
+// ============================================================================
+// 디자인 팀이 수정 가능한 영역 (스타일, 레이아웃 관련)
 import React, { useState, useMemo } from 'react';
 import { Search, Map as MapIcon, Star, Heart, User, Home, MapPin, Plus, XCircle, X, Navigation, Info, MessageSquare } from 'lucide-react';
 
@@ -120,6 +128,209 @@ export default function App() {
       coords: { top: '50%', left: '50%' },
       details: "방금 등록된 따끈따끈한 장소입니다!"
     };
+    script.onerror = (err) => reject(err);
+    document.head.appendChild(script);
+  });
+}
+
+// ============================================================================
+// 섹션 2: 상태 변수
+// ============================================================================
+// DB 팀과 디자인 팀 모두 사용하는 상태
+
+export default function App() {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [activeTab, setActiveTab] = useState('home');
+  const [selectedTag, setSelectedTag] = useState('전체');
+  const [favorites, setFavorites] = useState([]);
+  const [reviews, setReviews] = useState([]);
+  const [dbReady, setDbReady] = useState(false);
+  const [currentUser, setCurrentUser] = useState(null);
+
+  // ============================================================================
+  // 섹션 3: DB 로직 (DB 팀이 관리하는 영역)
+  // ============================================================================
+  // 이 섹션은 DB 팀이 수정하며, 디자인 팀은 수정하지 않음
+
+  // DB 초기화
+  useEffect(() => {
+    const initDb = async () => {
+      try {
+        await db.init();
+        setDbReady(true);
+      } catch (error) {
+        console.error('DB 초기화 실패:', error);
+      }
+    };
+    
+    initDb();
+  }, []);
+
+  // 리뷰 로드
+  useEffect(() => {
+    if (!dbReady) return;
+    
+    const loadData = async () => {
+      try {
+        const result = await db.reviews.search({ limit: 100 });
+        if (result.reviews && result.reviews.length > 0) {
+          const formattedReviews = result.reviews.map(r => ({
+            id: r.id,
+            user: r.author_nickname || '익명',
+            location: r.location,
+            rating: r.rating,
+            comment: r.comment,
+            image: r.image_url || '',
+            likes: r.likes_count || 0,
+            replies: r.replies_count || 0,
+            tags: r.tags || [],
+            coords: { x: 50, y: 50 }
+          }));
+          setReviews(formattedReviews);
+        }
+      } catch (error) {
+        console.error('리뷰 로드 실패:', error);
+      }
+    };
+    
+    loadData();
+  }, [dbReady]);
+
+  // 찜하기 토글 함수 (DB 연동)
+  const toggleFavorite = async (id) => {
+    if (!currentUser) {
+      // 로그인되지 않은 경우 로컬 상태만 업데이트
+      setFavorites(prev => 
+        prev.includes(id) ? prev.filter(favId => favId !== id) : [...prev, id]
+      );
+      return;
+    }
+    
+    const currentUserId = currentUser.id;
+    
+    try {
+      const isWishlisted = await db.wishlists.isWishlisted(currentUserId, 'REVIEW', id);
+      
+      if (isWishlisted) {
+        await db.wishlists.remove(currentUserId, 'REVIEW', id);
+        setFavorites(prev => prev.filter(favId => favId !== id));
+      } else {
+        await db.wishlists.add(currentUserId, 'REVIEW', id);
+        setFavorites(prev => [...prev, id]);
+      }
+    } catch (error) {
+      console.error('찜하기 실패:', error);
+      // 에러 발생 시 로컬 상태만 업데이트
+      setFavorites(prev => 
+        prev.includes(id) ? prev.filter(favId => favId !== id) : [...prev, id]
+      );
+    }
+  };
+
+  // 찜 목록 로드 (로그인된 사용자만)
+  useEffect(() => {
+    const loadFavorites = async () => {
+      if (!dbReady || !currentUser) return;
+      
+      try {
+        const wishlistIds = await db.wishlists.getWishlistIds(currentUser.id, 'REVIEW');
+        setFavorites(wishlistIds);
+      } catch (error) {
+        console.error('찜 목록 로드 실패:', error);
+      }
+    };
+    
+    loadFavorites();
+  }, [dbReady, currentUser]);
+
+  // ============================================================================
+  // 섹션 4: 데이터 변환 헬퍼 함수
+  // ============================================================================
+  // DB 데이터를 UI에서 사용할 형식으로 변환
+
+  const tags = ['전체', ...new Set(reviews.flatMap((r) => r.tags || []))];
+
+  // ============================================================================
+  // 섹션 5: 내부 컴포넌트 (디자인 팀이 수정 가능한 영역)
+  // ============================================================================
+  // 이 섹션은 디자인 팀이 주로 수정하며, DB 팀은 데이터 바인딩만 확인
+  const HomeView = () => (
+    <div className="p-4 space-y-6">
+      <div className="flex justify-between items-center px-2">
+        <h2 className="text-lg font-bold flex items-center gap-2">
+          <Star className="w-5 h-5 text-yellow-400 fill-yellow-400" />
+          {selectedTag === '전체' ? '지금 뜨는 리뷰' : `${selectedTag} 추천 장소`}
+        </h2>
+        <span className="text-xs font-bold text-slate-400">전체보기</span>
+      </div>
+      <div className="flex gap-2 overflow-x-auto no-scrollbar pb-2">
+        {tags.map((tag) => (
+          <button
+            key={tag}
+            onClick={() => setSelectedTag(tag)}
+            className={`px-4 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap ${selectedTag === tag ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500'}`}
+          >
+            {tag === '전체' ? tag : `#${tag}`}
+          </button>
+        ))}
+      </div>
+      {reviews.filter((r) => selectedTag === '전체' || (r.tags || []).includes(selectedTag)).map((review) => (
+        <div key={review.id} className="bg-white rounded-xl p-4 shadow-sm border border-slate-100">
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center text-blue-600 text-xs font-semibold">
+              <MapPin className="w-3 h-3 mr-1" />
+              {review.location}
+            </div>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); toggleFavorite(review.id); }}
+              className="p-1 rounded-full hover:bg-slate-100 transition-colors"
+              aria-label={favorites.includes(review.id) ? '찜 해제' : '찜하기'}
+            >
+              <Heart className={`w-5 h-5 ${favorites.includes(review.id) ? 'fill-red-400 text-red-400' : 'text-gray-300'}`} />
+            </button>
+          </div>
+          <h3 className="font-bold text-lg">{review.user}님의 여행 기록</h3>
+          <p className="text-gray-600 text-sm mt-2 line-clamp-3">{review.comment}</p>
+          <div className="flex items-center gap-4 mt-4 text-gray-400 text-xs">
+            <span className="flex items-center"><Heart className="w-4 h-4 mr-1 text-red-400" /> {review.likes}</span>
+            <span className="flex items-center"><MessageSquare className="w-4 h-4 mr-1" /> {review.replies}</span>
+            <button className="text-blue-600 font-bold ml-auto">전체보기 <ChevronRight className="w-4 h-4 inline" /></button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  // 지도 뷰 (Kakao Maps + 무장애여행 CSV 연동)
+  const MapView = () => {
+    const mapRef = useRef(null);
+    const allMarkersRef = useRef([]);
+    const currentInfoCardRef = useRef(null);
+    const mapInstanceRef = useRef(null);
+    const kakaoRef = useRef(null);
+    const [selectedRegion, setSelectedRegion] = useState(REGIONS[0].value);
+    const [mapReady, setMapReady] = useState(false);
+    const [dropdownOpen, setDropdownOpen] = useState(false);
+
+    useEffect(() => {
+      const APP_KEY = 'cf864dc2f0d80f5ca499d30ea483efd6';
+      let mounted = true;
+      loadKakaoMap(APP_KEY).then((kakao) => {
+        if (!mounted) return;
+        const container = mapRef.current;
+        if (!container) return;
+        kakaoRef.current = kakao;
+        const map = new kakao.maps.Map(container, { center: new kakao.maps.LatLng(33.450701, 126.570667), level: 3 });
+        mapInstanceRef.current = map;
+        requestAnimationFrame(() => { if (map.relayout) map.relayout(); setMapReady(true); });
+      }).catch((e) => console.error('Kakao Maps 로드 실패', e));
+      return () => {
+        mounted = false;
+        allMarkersRef.current.forEach((item) => { item.marker.setMap(null); item.labelOverlay.setMap(null); item.infoCardOverlay.setMap(null); });
+        allMarkersRef.current = []; mapInstanceRef.current = null; kakaoRef.current = null;
+      };
+    }, []);
 
     setReviews([reviewToAdd, ...reviews]); // 목록 맨 앞에 추가
     setNewReview({ location: "", comment: "", category: "명소" });
@@ -127,7 +338,45 @@ export default function App() {
     setActiveTab('home'); // 등록 후 홈으로 이동
   };
 
+  // ============================================================================
+  // 섹션 6: 메인 JSX 렌더링 (디자인 팀이 수정 가능한 영역)
+  // ============================================================================
+  // 이 섹션은 디자인 팀이 주로 수정하며, DB 팀은 데이터 바인딩만 확인
+  // 주의: {reviews}, {favorites}, {currentUser}, {toggleFavorite} 등은 DB 팀이 제공하는 데이터/함수
+
   return (
+    <div className="flex flex-col min-h-screen bg-slate-50 font-sans text-slate-900">
+      {/* 상단 헤더 */}
+      <header className="px-6 py-4 bg-white flex items-center justify-between border-b border-slate-100 shrink-0">
+        <h1 className="text-2xl font-black tracking-tight text-blue-600">Jeju Reviews</h1>
+        <div className="flex items-center gap-3">
+          {currentUser && (
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 rounded-full">
+              <User className="w-4 h-4 text-blue-600" />
+              <span className="text-sm font-semibold text-blue-600">{currentUser.nickname}</span>
+            </div>
+          )}
+          <button className="p-2 bg-slate-100 rounded-full hover:bg-slate-200 transition-colors">
+            <Search className="w-5 h-5 text-slate-600" />
+          </button>
+        </div>
+      </header>
+
+      {/* 필터 탭 영역 (3단계) */}
+      <div className="bg-white px-4 py-3 flex gap-2 overflow-x-auto no-scrollbar border-b border-slate-100 shrink-0">
+        {tags.map((tag) => (
+          <button
+            key={tag}
+            onClick={() => setSelectedTag(tag)}
+            className={`px-4 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-all
+              ${selectedTag === tag 
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-100 scale-105' 
+                : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+          >
+            {tag === '전체' ? tag : `#${tag}`}
+          </button>
+        ))}
+      </div>
     <div className="max-w-md mx-auto h-screen bg-white flex flex-col border-x border-gray-100 relative overflow-hidden shadow-2xl font-sans text-gray-900">
       
       {/* 상단 헤더 & 검색 & 카테고리 */}
@@ -155,6 +404,18 @@ export default function App() {
                 />
               )}
             </div>
+            {reviews.filter((r) => selectedTag === '전체' || (r.tags || []).includes(selectedTag)).map((review) => (
+            <div key={review.id} className="p-4 bg-white rounded-xl shadow-sm border border-slate-100">
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center text-blue-600 text-xs font-semibold">
+                  <MapPin className="w-3 h-3 mr-1" />
+                  {review.location}
+                </div>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); toggleFavorite(review.id); }}
+                  className="p-1 rounded-full hover:bg-slate-100 transition-colors"
+                  aria-label={favorites.includes(review.id) ? '찜 해제' : '찜하기'}
             
             <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
               {CATEGORIES.map(cat => (
@@ -186,6 +447,14 @@ export default function App() {
                 >
                   <MapPin size={20} className="text-blue-500 fill-current" />
                 </button>
+              </div>
+            ) : (
+              reviews.filter((r) => favorites.includes(r.id)).map((review) => (
+                <div key={review.id} className="p-4 bg-white rounded-xl shadow-sm border border-slate-100">
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center text-blue-600 text-xs font-semibold">
+                      <MapPin className="w-3 h-3 mr-1" />
+                      {review.location}
              ))}
              {selectedMapItem && (
                <div className="absolute bottom-5 left-5 right-5 bg-white p-4 rounded-3xl shadow-2xl flex gap-4 animate-in slide-in-from-bottom-5">
@@ -251,6 +520,63 @@ export default function App() {
             )}
           </div>
         )}
+        {activeTab === 'profile' && (
+          <div className="p-6">
+            {currentUser ? (
+              <div className="bg-white rounded-xl p-6 shadow-sm border border-slate-100">
+                <div className="flex items-center gap-4 mb-6">
+                  <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center">
+                    <User className="w-8 h-8 text-blue-600" />
+                  </div>
+                  <div className="flex-1">
+                    <h3 className="text-lg font-bold text-gray-900">{currentUser.nickname}</h3>
+                    <p className="text-sm text-gray-500">{currentUser.email || '이메일 없음'}</p>
+                  </div>
+                </div>
+                
+                <div className="space-y-3 pt-4 border-t border-gray-100">
+                  <div className="flex items-center justify-between py-2">
+                    <span className="text-sm text-gray-600">사용자 ID</span>
+                    <span className="text-sm font-semibold text-gray-900">{currentUser.id}</span>
+                  </div>
+                  <div className="flex items-center justify-between py-2">
+                    <span className="text-sm text-gray-600">이메일</span>
+                    <span className="text-sm font-semibold text-gray-900">{currentUser.email || '없음'}</span>
+                  </div>
+                  <div className="flex items-center justify-between py-2">
+                    <span className="text-sm text-gray-600">상태</span>
+                    <span className={`text-sm font-semibold px-2 py-1 rounded ${
+                      currentUser.status === 'ACTIVE' 
+                        ? 'bg-green-100 text-green-700' 
+                        : 'bg-gray-100 text-gray-700'
+                    }`}>
+                      {currentUser.status === 'ACTIVE' ? '활성' : currentUser.status}
+                    </span>
+                  </div>
+                  {currentUser.created_at && (
+                    <div className="flex items-center justify-between py-2">
+                      <span className="text-sm text-gray-600">가입일</span>
+                      <span className="text-sm font-semibold text-gray-900">
+                        {new Date(currentUser.created_at).toLocaleDateString('ko-KR')}
+                      </span>
+                    </div>
+                  )}
+                </div>
+                
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full text-gray-500 p-8 text-center">
+                <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                  <User className="w-10 h-10 text-gray-300" />
+                </div>
+                <h4 className="text-gray-800 font-bold mb-1">로그인이 필요합니다</h4>
+                <p className="text-sm">나의 여행 기록을 저장하고<br/>친구들과 공유해보세요!</p>
+                <button className="mt-6 w-full bg-blue-600 text-white py-3 rounded-xl font-bold">로그인 / 회원가입</button>
+              </div>
+            )}
+          </div>
+        )}
+      </main>
       </div>
 
       {/* 하단 네비게이션 & + 버튼 */}
