@@ -1,56 +1,77 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Search, Map as MapIcon, Star, Heart, MessageSquare, User, Home, MapPin, ChevronRight, ChevronDown, Filter, ImageOff, Plus, Minus, Navigation, LogOut, Mail, Lock, Loader2, Camera, Edit2, Check, X, TrendingUp, TrendingDown, Accessibility, Bath, Car, Wrench, MoveVertical, Layers, CircleDot } from 'lucide-react';
+import db from './services/db';
 
 /**
- * [임시 데이터베이스 로직]
- * 닉네임(nickname)과 프로필 이미지(profileImage) 필드를 지원합니다.
+ * [인증/회원 로직]
+ * 기존 MockAuth 인터페이스를 유지하면서 Supabase 기반 `db.members`를 사용합니다.
  */
 const MockAuth = {
+  // 회원가입 → Supabase Auth + profiles
   async signUp({ email, password, nickname }) {
-    await new Promise(res => setTimeout(res, 800));
-    const users = JSON.parse(localStorage.getItem('mock_users') || '[]');
-    if (users.find(u => u.email === email)) {
-      return { error: { message: "이미 가입된 이메일입니다." } };
+    try {
+      const user = await db.members.create({ email, password, nickname });
+      return { data: { user }, error: null };
+    } catch (err) {
+      console.error('SignUp error:', err);
+      if (err?.message === 'EMAIL_EXISTS') {
+        return { data: null, error: { message: '이미 가입된 이메일입니다.' } };
+      }
+      return { data: null, error: { message: '회원가입 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' } };
     }
-    const newUser = { 
-      id: Math.random().toString(36).substr(2, 9), 
-      email, 
-      password, 
-      nickname: nickname || email.split('@')[0],
-      profileImage: "" 
-    };
-    localStorage.setItem('mock_users', JSON.stringify([...users, newUser]));
-    return { data: { user: newUser }, error: null };
   },
+
+  // 로그인 → Supabase Auth
   async signInWithPassword({ email, password }) {
-    await new Promise(res => setTimeout(res, 800));
-    const users = JSON.parse(localStorage.getItem('mock_users') || '[]');
-    const user = users.find(u => u.email === email && u.password === password);
-    if (!user) {
-      return { error: { message: "이메일 또는 비밀번호가 일치하지 않습니다." } };
+    try {
+      const user = await db.members.login({ email, password });
+      if (!user) {
+        return { data: null, error: { message: '이메일 또는 비밀번호가 일치하지 않습니다.' } };
+      }
+      return { data: { user }, error: null };
+    } catch (err) {
+      console.error('SignIn error:', err);
+      if (err?.message === 'INVALID_CREDENTIALS') {
+        return { data: null, error: { message: '이메일 또는 비밀번호가 일치하지 않습니다.' } };
+      }
+      return { data: null, error: { message: '로그인 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' } };
     }
-    localStorage.setItem('mock_session', JSON.stringify(user));
-    return { data: { user }, error: null };
   },
+
+  // 프로필 수정 → profiles 테이블 업데이트
   async updateProfile(userId, updates) {
-    await new Promise(res => setTimeout(res, 500));
-    const users = JSON.parse(localStorage.getItem('mock_users') || '[]');
-    const updatedUsers = users.map(u => u.id === userId ? { ...u, ...updates } : u);
-    localStorage.setItem('mock_users', JSON.stringify(updatedUsers));
-    
-    const session = JSON.parse(localStorage.getItem('mock_session'));
-    if (session && session.id === userId) {
-      localStorage.setItem('mock_session', JSON.stringify({ ...session, ...updates }));
+    try {
+      const user = await db.members.update(userId, {
+        nickname: updates.nickname,
+        profileImage: updates.profileImage
+      });
+      return { data: { user }, error: null };
+    } catch (err) {
+      console.error('Update profile error:', err);
+      return { data: null, error: { message: '프로필 수정 중 오류가 발생했습니다.' } };
     }
-    return { error: null };
   },
+
+  // 로그아웃 → Supabase Auth signOut
   async signOut() {
-    localStorage.removeItem('mock_session');
-    return { error: null };
+    try {
+      await db.members.logout();
+      return { error: null };
+    } catch (err) {
+      console.error('SignOut error:', err);
+      return { error: { message: '로그아웃 중 오류가 발생했습니다.' } };
+    }
   },
+
+  // 현재 세션 조회 → supabase.auth.getUser + profiles
   async getSession() {
-    const session = localStorage.getItem('mock_session');
-    return { data: { session: session ? JSON.parse(session) : null } };
+    try {
+      const user = await db.members.getCurrentUser();
+      return { data: { session: user } };
+    } catch (err) {
+      console.error('GetSession error:', err);
+      return { data: { session: null } };
+    }
   }
 };
 

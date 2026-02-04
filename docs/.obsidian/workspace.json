@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "hyopjae-images-usage.md",
+                "file": "SUPABASE-MIGRATION.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "hyopjae-images-usage"
+              "title": "SUPABASE-MIGRATION"
             }
           }
         ]
@@ -94,7 +94,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "hyopjae-images-usage.md",
+                "file": "SUPABASE-MIGRATION.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -104,7 +104,7 @@
                 "unlinkedCollapsed": true
               },
               "icon": "links-coming-in",
-              "title": "Backlinks for hyopjae-images-usage"
+              "title": "Backlinks for SUPABASE-MIGRATION"
             }
           },
           {
@@ -113,12 +113,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "hyopjae-images-usage.md",
+                "file": "SUPABASE-MIGRATION.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               },
               "icon": "links-going-out",
-              "title": "Outgoing links from hyopjae-images-usage"
+              "title": "Outgoing links from SUPABASE-MIGRATION"
             }
           },
           {
@@ -156,13 +156,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "hyopjae-images-usage.md",
+                "file": "SUPABASE-MIGRATION.md",
                 "followCursor": false,
                 "showSearch": false,
                 "searchQuery": ""
               },
               "icon": "lucide-list",
-              "title": "Outline of hyopjae-images-usage"
+              "title": "Outline of SUPABASE-MIGRATION"
             }
           }
         ]
@@ -185,8 +185,8 @@
   },
   "active": "5dee57188f3eb21e",
   "lastOpenFiles": [
-    "SUPABASE-MIGRATION.md",
     "hyopjae-images-usage.md",
+    "SUPABASE-MIGRATION.md",
     "README.md",
     "QUICK-START.md",
     "SUPABASE-TROUBLESHOOTING.md"
