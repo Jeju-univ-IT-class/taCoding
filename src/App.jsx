@@ -673,6 +673,9 @@ function MapViewKakao() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [locationError, setLocationError] = useState(null);
   const [showLegend, setShowLegend] = useState(false);
+  const [placeList, setPlaceList] = useState([]);
+  const [selectedPlaceId, setSelectedPlaceId] = useState(null);
+  const [isListOpen, setIsListOpen] = useState(false);
 
   const handleZoomIn = () => {
     const map = mapInstanceRef.current;
@@ -720,6 +723,15 @@ function MapViewKakao() {
     );
   };
 
+  const handlePlaceItemClick = (placeId) => {
+    const kakao = kakaoRef.current;
+    const map = mapInstanceRef.current;
+    if (!kakao || !map) return;
+    const target = allMarkersRef.current.find((item) => item.placeId === placeId);
+    if (!target) return;
+    kakao.maps.event.trigger(target.marker, 'click');
+  };
+
   useEffect(() => {
     const APP_KEY = 'cf864dc2f0d80f5ca499d30ea483efd6';
     let mounted = true;
@@ -731,7 +743,7 @@ function MapViewKakao() {
       const map = new kakao.maps.Map(container, { center: new kakao.maps.LatLng(33.450701, 126.570667), level: 3 });
       mapInstanceRef.current = map;
 
-      // 지도를 클릭하면 선택된 핀 강조/카드 상태 초기화
+      // 지도를 클릭하면 선택된 핀 강조/카드/목록 상태 초기화
       kakao.maps.event.addListener(map, 'click', () => {
         if (currentInfoCardRef.current) {
           currentInfoCardRef.current.setMap(null);
@@ -747,6 +759,8 @@ function MapViewKakao() {
           }
           selectedMarkerRef.current = null;
         }
+        // 열려 있는 목록도 닫기
+        setIsListOpen(false);
       });
 
       requestAnimationFrame(() => { if (map.relayout) map.relayout(); setMapReady(true); });
@@ -755,6 +769,8 @@ function MapViewKakao() {
       mounted = false;
       allMarkersRef.current.forEach((item) => { item.marker.setMap(null); item.labelOverlay.setMap(null); item.infoCardOverlay.setMap(null); });
       allMarkersRef.current = [];
+      setPlaceList([]);
+      setSelectedPlaceId(null);
       if (currentLocationMarkerRef.current) {
         currentLocationMarkerRef.current.setMap(null);
         currentLocationMarkerRef.current = null;
@@ -776,6 +792,8 @@ function MapViewKakao() {
     }
     allMarkersRef.current.forEach((item) => { item.marker.setMap(null); item.labelOverlay.setMap(null); item.infoCardOverlay.setMap(null); });
     allMarkersRef.current = [];
+    setPlaceList([]);
+    setSelectedPlaceId(null);
     if (currentInfoCardRef.current) { currentInfoCardRef.current.setMap(null); currentInfoCardRef.current = null; }
     const imageBaseUrl = region.imageBaseUrl || '';
     const createMarkerImageForLevel = (level, hexColor, isSelected = false) => {
@@ -783,7 +801,7 @@ function MapViewKakao() {
       const url = createPinDataUrl(hexColor || DEFAULT_PIN_COLOR, s.width, s.height, isSelected);
       return new kakao.maps.MarkerImage(url, new kakao.maps.Size(s.width, s.height), { offset: new kakao.maps.Point(s.offsetX, s.offsetY) });
     };
-    const createMarkerWithLabel = (position, placeInfo) => {
+    const createMarkerWithLabel = (position, placeInfo, placeId) => {
       const primaryBadge = getPrimaryBadge(placeInfo);
       const pinColor = getPinColorForBadge(primaryBadge);
       const markerOption = { position };
@@ -840,6 +858,7 @@ function MapViewKakao() {
         selectedMarkerRef.current = marker;
         const thisItem = allMarkersRef.current.find((it) => it.marker === marker);
         if (thisItem) thisItem.isSelected = true;
+        setSelectedPlaceId(placeId || null);
 
         // 선택한 핀으로 지도 포커싱
         map.panTo(position);
@@ -849,7 +868,7 @@ function MapViewKakao() {
           map.setLevel(3);
         }
       });
-      return { marker, labelOverlay: customOverlay, infoCardOverlay, position, primaryBadge, isSelected: false };
+      return { marker, labelOverlay: customOverlay, infoCardOverlay, position, primaryBadge, isSelected: false, placeId };
     };
     // Supabase places 테이블에서 선택된 region의 장소들을 불러와 마커 생성
     let cancelled = false;
@@ -865,6 +884,7 @@ function MapViewKakao() {
         }
 
         const allMarkers = [];
+        const uiPlaces = [];
         placeRows.forEach((p, index) => {
           if (p.latitude == null || p.longitude == null) return;
           const lat = Number(p.latitude);
@@ -878,17 +898,27 @@ function MapViewKakao() {
             modifiedAt: p.modified_at || '',
             imageFile: null,
           };
+          const primaryBadge = getPrimaryBadge(placeInfo);
+          uiPlaces.push({
+            id: p.id,
+            name: placeInfo.name,
+            detailInfo: placeInfo.detailInfo,
+            disabledInfo: placeInfo.disabledInfo,
+            modifiedAt: placeInfo.modifiedAt,
+            primaryBadge,
+          });
           if (index === 0) {
             map.setCenter(position);
             map.setLevel(6);
           }
           try {
-            allMarkers.push(createMarkerWithLabel(position, placeInfo));
+            allMarkers.push(createMarkerWithLabel(position, placeInfo, p.id));
           } catch (e) {
             console.warn('마커 생성 스킵:', position, e);
           }
         });
         allMarkersRef.current = allMarkers;
+        setPlaceList(uiPlaces);
 
         const updateMarkersSize = () => {
           const level = map.getLevel();
@@ -1001,6 +1031,81 @@ function MapViewKakao() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* 장소 목록 패널 (접기/펼치기 가능) */}
+        {isListOpen && placeList.length > 0 && (
+          <div className="absolute left-4 right-4 bottom-4 z-10 pointer-events-none">
+            <div className="bg-white/95 backdrop-blur-sm border border-gray-200 rounded-2xl shadow-lg max-h-52 overflow-y-auto no-scrollbar pointer-events-auto">
+              <div className="px-4 py-2 border-b border-gray-100 flex items-center justify-between">
+                <span className="text-xs font-bold text-gray-500">
+                  {currentRegionLabel} 무장애 여행지 {placeList.length}곳
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsListOpen(false)}
+                  className="p-1 rounded-full hover:bg-gray-100 transition-colors"
+                  aria-label="목록 닫기"
+                >
+                  <ChevronDown className="w-3 h-3 text-gray-400" />
+                </button>
+              </div>
+              <ul className="divide-y divide-gray-100">
+                {placeList.map((p) => {
+                  const badgeStyle = p.primaryBadge ? getBadgeStyle(p.primaryBadge) : null;
+                  const isSelected = selectedPlaceId === p.id;
+                  return (
+                    <li key={p.id}>
+                      <button
+                        type="button"
+                        onClick={() => handlePlaceItemClick(p.id)}
+                        className={`w-full px-4 py-3 flex items-start gap-3 text-left hover:bg-gray-50 transition-colors ${
+                          isSelected ? 'bg-[#45a494]/5 border-l-2 border-[#45a494]' : ''
+                        }`}
+                      >
+                        <div className="mt-1">
+                          <MapPin
+                            className={`w-4 h-4 ${
+                              badgeStyle ? 'text-[#45a494]' : 'text-[#45a494]'
+                            }`}
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <p className="text-xs font-bold text-gray-800 truncate">{p.name}</p>
+                            {p.primaryBadge && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-gray-100 bg-gray-50 text-[9px] font-semibold text-gray-500 shrink-0">
+                                {p.primaryBadge}
+                              </span>
+                            )}
+                          </div>
+                          {p.detailInfo && (
+                            <p className="text-[10px] text-gray-500 line-clamp-2">{p.detailInfo}</p>
+                          )}
+                          {p.disabledInfo && (
+                            <p className="text-[10px] text-gray-500 line-clamp-2 mt-0.5">{p.disabledInfo}</p>
+                          )}
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          </div>
+        )}
+
+        {/* 목록 열기 토글 버튼 (닫혀 있을 때만 표시) */}
+        {!isListOpen && placeList.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setIsListOpen(true)}
+            className="absolute left-1/2 -translate-x-1/2 bottom-4 z-10 px-3 py-1.5 rounded-full bg-white/95 border border-gray-200 shadow-sm text-[11px] font-bold text-gray-700 flex items-center gap-1.5 pointer-events-auto"
+          >
+            <span>목록 열기</span>
+            <span className="text-[10px] text-gray-400">({placeList.length})</span>
+            <ChevronDown className="w-3 h-3 text-gray-400 -rotate-180" />
+          </button>
         )}
 
         <div className="absolute bottom-8 right-4 flex flex-col gap-2 z-10 pointer-events-auto" aria-label="지도 컨트롤">
