@@ -415,9 +415,57 @@ function MapViewKakao() {
   const currentInfoCardRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const kakaoRef = useRef(null);
+  const currentLocationMarkerRef = useRef(null);
   const [selectedRegion, setSelectedRegion] = useState(MAP_REGIONS[0].value);
   const [mapReady, setMapReady] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [locationError, setLocationError] = useState(null);
+
+  const handleZoomIn = () => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    const level = map.getLevel();
+    map.setLevel(Math.max(1, level - 1), { animate: true });
+  };
+
+  const handleZoomOut = () => {
+    const map = mapInstanceRef.current;
+    if (!map) return;
+    const level = map.getLevel();
+    map.setLevel(Math.min(14, level + 1), { animate: true });
+  };
+
+  const handleCurrentLocation = () => {
+    const map = mapInstanceRef.current;
+    const kakao = kakaoRef.current;
+    if (!map || !kakao) return;
+    if (!navigator.geolocation) {
+      setLocationError('이 브라우저는 위치 서비스를 지원하지 않습니다.');
+      return;
+    }
+    setLocationError(null);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = position.coords.latitude;
+        const lng = position.coords.longitude;
+        const loc = new kakao.maps.LatLng(lat, lng);
+        map.setCenter(loc);
+        map.setLevel(3, { animate: true });
+        if (currentLocationMarkerRef.current) {
+          currentLocationMarkerRef.current.setMap(null);
+        }
+        const marker = new kakao.maps.Marker({
+          position: loc,
+          map,
+        });
+        currentLocationMarkerRef.current = marker;
+      },
+      () => {
+        setLocationError('위치를 가져올 수 없습니다. 권한을 확인해 주세요.');
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  };
 
   useEffect(() => {
     const APP_KEY = 'cf864dc2f0d80f5ca499d30ea483efd6';
@@ -434,7 +482,13 @@ function MapViewKakao() {
     return () => {
       mounted = false;
       allMarkersRef.current.forEach((item) => { item.marker.setMap(null); item.labelOverlay.setMap(null); item.infoCardOverlay.setMap(null); });
-      allMarkersRef.current = []; mapInstanceRef.current = null; kakaoRef.current = null;
+      allMarkersRef.current = [];
+      if (currentLocationMarkerRef.current) {
+        currentLocationMarkerRef.current.setMap(null);
+        currentLocationMarkerRef.current = null;
+      }
+      mapInstanceRef.current = null;
+      kakaoRef.current = null;
     };
   }, []);
 
@@ -515,21 +569,26 @@ function MapViewKakao() {
           )}
         </div>
       </div>
-      <div className="flex-1 relative overflow-hidden min-h-[320px] bg-gray-50">
-        <div ref={mapRef} className="absolute inset-0 w-full" style={{ minHeight: 320 }} />
-        <div className="absolute bottom-8 right-4 flex flex-col gap-2">
-          <button type="button" className="w-10 h-10 bg-white rounded-lg shadow-md flex items-center justify-center text-gray-600">
+      <div className="flex-1 relative overflow-hidden min-h-[320px] bg-gray-50 isolate">
+        <div ref={mapRef} className="absolute inset-0 w-full z-0" style={{ minHeight: 320 }} />
+        <div className="absolute bottom-8 right-4 flex flex-col gap-2 z-10 pointer-events-auto" aria-label="지도 컨트롤">
+          <button type="button" onClick={handleCurrentLocation} className="w-10 h-10 bg-white rounded-lg shadow-md flex items-center justify-center text-gray-600 hover:bg-gray-50 active:scale-95 transition-transform" aria-label="현재 위치로 이동">
             <Navigation className="w-5 h-5" />
           </button>
           <div className="flex flex-col bg-white rounded-lg shadow-md overflow-hidden">
-            <button type="button" className="w-10 h-10 flex items-center justify-center text-gray-600 border-b border-gray-100">
+            <button type="button" onClick={handleZoomIn} className="w-10 h-10 flex items-center justify-center text-gray-600 border-b border-gray-100 hover:bg-gray-50 active:scale-95 transition-transform" aria-label="지도 확대">
               <Plus className="w-5 h-5" />
             </button>
-            <button type="button" className="w-10 h-10 flex items-center justify-center text-gray-600">
+            <button type="button" onClick={handleZoomOut} className="w-10 h-10 flex items-center justify-center text-gray-600 hover:bg-gray-50 active:scale-95 transition-transform" aria-label="지도 축소">
               <Minus className="w-5 h-5" />
             </button>
           </div>
         </div>
+        {locationError && (
+          <div className="absolute bottom-24 left-4 right-14 z-10 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 shadow-sm">
+            {locationError}
+          </div>
+        )}
       </div>
     </div>
   );
