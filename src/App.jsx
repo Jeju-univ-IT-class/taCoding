@@ -90,6 +90,45 @@ const INITIAL_REVIEWS = [
 
 const REVIEWS = INITIAL_REVIEWS;
 
+// 지역별 CSV 목록 (Kakao Map 무장애여행 마커용)
+const MAP_REGIONS = [
+  { value: '12-법환포구', label: '법환포구', file: '/region_12.csv' },
+  { value: '14-토끼섬과하도포구', label: '토끼섬과하도포구', file: '/region_14.csv' },
+  { value: '35-해녀박물관', label: '해녀박물관', file: '/region_35.csv' },
+  { value: '49-동문시장', label: '동문시장', file: '/region_49.csv' },
+  { value: '50-제주도립미술관', label: '제주도립미술관', file: '/region_50.csv' },
+];
+
+function loadKakaoMap(appkey) {
+  return new Promise((resolve, reject) => {
+    const initMap = () => {
+      if (window.kakao?.maps?.LatLng) return resolve(window.kakao);
+      if (window.kakao?.maps?.load) {
+        window.kakao.maps.load(() => resolve(window.kakao));
+        return;
+      }
+      reject(new Error('kakao.maps not available'));
+    };
+    if (window.kakao?.maps?.LatLng) return resolve(window.kakao);
+    if (window.kakao?.maps?.load) {
+      window.kakao.maps.load(() => resolve(window.kakao));
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${appkey}&autoload=false`;
+    script.async = true;
+    script.onload = () => {
+      if (window.kakao?.maps?.load) {
+        window.kakao.maps.load(() => resolve(window.kakao));
+      } else {
+        initMap();
+      }
+    };
+    script.onerror = (err) => reject(err);
+    document.head.appendChild(script);
+  });
+}
+
 const SafeImage = ({ src, alt, className }) => {
   const [error, setError] = useState(false);
   if (error || !src) {
@@ -368,6 +407,133 @@ const ProfileView = ({ user, handleLogout, favoritesCount, onUpdateProfile, revi
     </div>
   );
 };
+
+// Kakao Maps + 무장애여행 CSV 연동 지도 뷰 (맵 탭용)
+function MapViewKakao() {
+  const mapRef = useRef(null);
+  const allMarkersRef = useRef([]);
+  const currentInfoCardRef = useRef(null);
+  const mapInstanceRef = useRef(null);
+  const kakaoRef = useRef(null);
+  const [selectedRegion, setSelectedRegion] = useState(MAP_REGIONS[0].value);
+  const [mapReady, setMapReady] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+
+  useEffect(() => {
+    const APP_KEY = 'cf864dc2f0d80f5ca499d30ea483efd6';
+    let mounted = true;
+    loadKakaoMap(APP_KEY).then((kakao) => {
+      if (!mounted) return;
+      const container = mapRef.current;
+      if (!container) return;
+      kakaoRef.current = kakao;
+      const map = new kakao.maps.Map(container, { center: new kakao.maps.LatLng(33.450701, 126.570667), level: 3 });
+      mapInstanceRef.current = map;
+      requestAnimationFrame(() => { if (map.relayout) map.relayout(); setMapReady(true); });
+    }).catch((e) => console.error('Kakao Maps 로드 실패', e));
+    return () => {
+      mounted = false;
+      allMarkersRef.current.forEach((item) => { item.marker.setMap(null); item.labelOverlay.setMap(null); item.infoCardOverlay.setMap(null); });
+      allMarkersRef.current = []; mapInstanceRef.current = null; kakaoRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!mapReady || !mapInstanceRef.current || !kakaoRef.current) return;
+    const region = MAP_REGIONS.find((r) => r.value === selectedRegion);
+    if (!region) return;
+    const kakao = kakaoRef.current;
+    const map = mapInstanceRef.current;
+    allMarkersRef.current.forEach((item) => { item.marker.setMap(null); item.labelOverlay.setMap(null); item.infoCardOverlay.setMap(null); });
+    allMarkersRef.current = [];
+    if (currentInfoCardRef.current) { currentInfoCardRef.current.setMap(null); currentInfoCardRef.current = null; }
+    const customMarkerImage = { url: 'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/marker_red.png', size: new kakao.maps.Size(64, 69), offset: new kakao.maps.Point(27, 69) };
+    const createMarkerWithLabel = (position, placeInfo) => {
+      const markerOption = { position };
+      if (customMarkerImage?.url) markerOption.image = new kakao.maps.MarkerImage(customMarkerImage.url, customMarkerImage.size, { offset: customMarkerImage.offset });
+      const marker = new kakao.maps.Marker(markerOption);
+      marker.setMap(map);
+      const overlayContent = '<div style="padding:5px 10px;background:#fff;border:1px solid #ddd;border-radius:4px;font-size:12px;white-space:nowrap;margin-top:8px;">' + placeInfo.name + '</div>';
+      const customOverlay = new kakao.maps.CustomOverlay({ position, content: overlayContent, yAnchor: 0 });
+      customOverlay.setMap(map);
+      const cardHtml = '<div style="min-width:180px;max-width:260px;padding:12px 14px;background:#fff;border:1px solid #e0e0e0;border-radius:8px;font-size:12px;">' + '<div style="font-weight:700;margin-bottom:8px;">' + (placeInfo.name || '-') + '</div>' + (placeInfo.detailInfo ? '<div style="color:#666;margin-bottom:4px;">' + placeInfo.detailInfo + '</div>' : '') + (placeInfo.disabledInfo ? '<div style="color:#666;margin-bottom:4px;">' + placeInfo.disabledInfo + '</div>' : '') + (placeInfo.modifiedAt ? '<div style="color:#888;font-size:11px;">기준일자 ' + placeInfo.modifiedAt + '</div>' : '') + '</div>';
+      const infoCardOverlay = new kakao.maps.CustomOverlay({ position, content: cardHtml, yAnchor: 1.2, xAnchor: 0.5 });
+      kakao.maps.event.addListener(marker, 'mouseover', () => { if (currentInfoCardRef.current) currentInfoCardRef.current.setMap(null); infoCardOverlay.setMap(map); currentInfoCardRef.current = infoCardOverlay; });
+      kakao.maps.event.addListener(marker, 'mouseout', () => { infoCardOverlay.setMap(null); if (currentInfoCardRef.current === infoCardOverlay) currentInfoCardRef.current = null; });
+      return { marker, labelOverlay: customOverlay, infoCardOverlay, position };
+    };
+    fetch(region.file).then((res) => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.arrayBuffer(); })
+      .then((buffer) => {
+        if (!mapInstanceRef.current || !kakaoRef.current) return;
+        const text = new TextDecoder('euc-kr').decode(buffer);
+        const rows = text.trim().split(/\r?\n/); rows.shift();
+        const allMarkers = [];
+        rows.forEach((line, index) => {
+          if (!line.trim()) return;
+          const cols = line.split(',');
+          const lat = parseFloat(cols[0]); const lng = parseFloat(cols[1]);
+          if (Number.isNaN(lat) || Number.isNaN(lng)) return;
+          const position = new kakao.maps.LatLng(lat, lng);
+          const placeInfo = { name: (cols[2] || '').trim(), detailInfo: (cols[3] || '').trim(), disabledInfo: (cols[4] || '').trim(), modifiedAt: (cols[7] || '').trim() };
+          if (index === 0) { map.setCenter(position); map.setLevel(6); }
+          allMarkers.push(createMarkerWithLabel(position, placeInfo));
+        });
+        allMarkersRef.current = allMarkers;
+        if (map.relayout) requestAnimationFrame(() => map.relayout());
+      }).catch((err) => console.error('CSV 로딩 실패:', err));
+  }, [selectedRegion, mapReady]);
+
+  const currentRegionLabel = MAP_REGIONS.find((r) => r.value === selectedRegion)?.label ?? selectedRegion;
+  return (
+    <div className="h-full flex flex-col min-h-[420px]">
+      <div className="p-4 bg-white border-b z-10 flex flex-col gap-2">
+        <div className="flex justify-between items-center gap-2">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <input type="text" placeholder="주변 명소 검색" className="w-full bg-gray-100 rounded-lg py-2 pl-9 pr-4 text-xs focus:outline-none focus:ring-2 focus:ring-[#45a494]/20" />
+          </div>
+          <button type="button" className="p-2 bg-gray-100 rounded-lg flex-shrink-0">
+            <Filter className="w-4 h-4 text-gray-600" />
+          </button>
+        </div>
+        <div className="relative">
+          <button type="button" onClick={() => setDropdownOpen((v) => !v)} className="w-full flex items-center justify-between px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700">
+            <span>{currentRegionLabel}</span>
+            <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {dropdownOpen && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setDropdownOpen(false)} aria-hidden="true" />
+              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-20 max-h-48 overflow-y-auto">
+                {MAP_REGIONS.map((r) => (
+                  <button key={r.value} type="button" onClick={() => { setSelectedRegion(r.value); setDropdownOpen(false); }} className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${selectedRegion === r.value ? 'bg-[#45a494]/10 text-[#45a494] font-medium' : 'text-gray-700'}`}>
+                    {r.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+      <div className="flex-1 relative overflow-hidden min-h-[320px] bg-gray-50">
+        <div ref={mapRef} className="absolute inset-0 w-full" style={{ minHeight: 320 }} />
+        <div className="absolute bottom-8 right-4 flex flex-col gap-2">
+          <button type="button" className="w-10 h-10 bg-white rounded-lg shadow-md flex items-center justify-center text-gray-600">
+            <Navigation className="w-5 h-5" />
+          </button>
+          <div className="flex flex-col bg-white rounded-lg shadow-md overflow-hidden">
+            <button type="button" className="w-10 h-10 flex items-center justify-center text-gray-600 border-b border-gray-100">
+              <Plus className="w-5 h-5" />
+            </button>
+            <button type="button" className="w-10 h-10 flex items-center justify-center text-gray-600">
+              <Minus className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // (내부용) 리뷰/맵/폼이 있는 단순 App - 상단 MockAuth/고치가게 App과 별도 구조용
 const CATEGORIES = ["전체", "명소", "바다", "맛집", "카페", "기타"];
@@ -944,10 +1110,9 @@ const App = () => {
           )}
 
           {activeTab === 'map' && (
-             <div className="h-full flex flex-col items-center justify-center text-gray-300 italic py-40">
-                <MapIcon size={48} className="mb-4 opacity-20" />
-                <p>지도 기능을 준비 중입니다.</p>
-             </div>
+            <div className="h-full flex flex-col min-h-[500px] animate-[fade-in_0.4s_ease-out]">
+              <MapViewKakao />
+            </div>
           )}
         </main>
 
