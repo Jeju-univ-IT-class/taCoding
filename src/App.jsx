@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Search, Map as MapIcon, Star, Heart, MessageSquare, User, Home, MapPin, ChevronRight, ChevronDown, Filter, ImageOff, Plus, Minus, Navigation, LogOut, Mail, Lock, Loader2, Camera, Edit2, Check, X } from 'lucide-react';
+import { Search, Map as MapIcon, Star, Heart, MessageSquare, User, Home, MapPin, ChevronRight, ChevronDown, Filter, ImageOff, Plus, Minus, Navigation, LogOut, Mail, Lock, Loader2, Camera, Edit2, Check, X, TrendingUp, TrendingDown, Accessibility, Bath, Car, Wrench, MoveVertical, Layers, CircleDot } from 'lucide-react';
 
 /**
  * [임시 데이터베이스 로직]
@@ -69,7 +69,8 @@ const INITIAL_REVIEWS = [
     tags: ["바다뷰", "일출맛집", "경사로완비"],
     isLiked: false,
     coords: { top: '48%', left: '85%' },
-    details: "매표소 옆 전용 화장실 완비"
+    details: "매표소 옆 전용 화장실 완비",
+    regionKey: "35-해녀박물관"
   },
   {
     id: 2,
@@ -84,11 +85,22 @@ const INITIAL_REVIEWS = [
     tags: ["바다뷰", "주차가능", "반려동물동반"],
     isLiked: false,
     coords: { top: '42%', left: '12%' },
-    details: "협재 1주차장 옆 무장애 화장실 이용 권장"
+    details: "협재 1주차장 옆 무장애 화장실 이용 권장",
+    regionKey: "hyopjae-협재해수욕장"
   }
 ];
 
 const REVIEWS = INITIAL_REVIEWS;
+
+// 협재 해수욕장 무장애 데이터 경로 (영문 경로 사용 — 한글 경로 시 SPA/서버에서 CSV 대신 HTML이 올 수 있음)
+const HYOPJAE_CSV = '/hyopjae/010-2.csv';
+const HYOPJAE_IMAGES = '/hyopjae/images/';
+
+// 한글 등 비ASCII 경로를 서버가 찾을 수 있도록 퍼센트 인코딩
+function encodePathForUrl(path) {
+  if (!path) return path;
+  return path.split('/').map((seg, i) => (i === 0 ? seg : (seg ? encodeURIComponent(seg) : ''))).join('/');
+}
 
 // 지역별 CSV 목록 (Kakao Map 무장애여행 마커용)
 const MAP_REGIONS = [
@@ -97,7 +109,154 @@ const MAP_REGIONS = [
   { value: '35-해녀박물관', label: '해녀박물관', file: '/region_35.csv' },
   { value: '49-동문시장', label: '동문시장', file: '/region_49.csv' },
   { value: '50-제주도립미술관', label: '제주도립미술관', file: '/region_50.csv' },
+  { value: 'hyopjae-협재해수욕장', label: '협재 해수욕장', file: HYOPJAE_CSV, format: 'hyopjae', imageBaseUrl: HYOPJAE_IMAGES },
 ];
+
+// CSV에서 무장애/장애물 관련 뱃지로 쓸 키워드 (휠체어 이용자 장애물 우선, 그다음 시설)
+const BADGE_KEYWORDS = [
+  '계단', '오르막', '내리막', '자갈길', '턱', '경사', '비포장', '협소', '울퉁불퉁',
+  '경사로', '휠체어', '화장실', '엘리베이터', '주차', '무장애', '슬로프', '리프트', '접근로', '전용화장실', '무장애화장실', '정비',
+];
+
+// 접근로 뱃지용 아이콘 (lucide-react에 Route 없음 → MapPin 사용)
+const AccessRouteIcon = MapPin;
+
+// 뱃지별 아이콘·색상 (홈 카드 무장애 뱃지 구분용)
+const BADGE_STYLES = {
+  계단:    { Icon: Layers,         className: 'bg-red-600/10 text-red-700 border-red-600/20' },
+  오르막:  { Icon: TrendingUp,     className: 'bg-orange-600/10 text-orange-700 border-orange-600/20' },
+  내리막:  { Icon: TrendingDown,   className: 'bg-rose-600/10 text-rose-700 border-rose-600/20' },
+  자갈길:  { Icon: CircleDot,     className: 'bg-stone-600/10 text-stone-700 border-stone-600/20' },
+  턱:     { Icon: Layers,         className: 'bg-red-500/10 text-red-600 border-red-500/20' },
+  경사:   { Icon: TrendingUp,     className: 'bg-amber-600/10 text-amber-700 border-amber-600/20' },
+  비포장:  { Icon: CircleDot,     className: 'bg-amber-700/10 text-amber-800 border-amber-700/20' },
+  협소:   { Icon: Minus,          className: 'bg-orange-500/10 text-orange-600 border-orange-500/20' },
+  울퉁불퉁: { Icon: CircleDot,   className: 'bg-amber-700/10 text-amber-800 border-amber-700/20' },
+  경사로:   { Icon: TrendingUp,   className: 'bg-teal-500/10 text-teal-700 border-teal-500/20' },
+  휠체어:   { Icon: Accessibility, className: 'bg-blue-500/10 text-blue-700 border-blue-500/20' },
+  화장실:   { Icon: Bath,          className: 'bg-amber-500/10 text-amber-800 border-amber-500/20' },
+  엘리베이터: { Icon: MoveVertical, className: 'bg-purple-500/10 text-purple-700 border-purple-500/20' },
+  주차:    { Icon: Car,           className: 'bg-slate-500/10 text-slate-700 border-slate-500/20' },
+  무장애:  { Icon: Accessibility, className: 'bg-emerald-500/10 text-emerald-700 border-emerald-500/20' },
+  슬로프:  { Icon: TrendingUp,    className: 'bg-orange-500/10 text-orange-700 border-orange-500/20' },
+  리프트:  { Icon: MoveVertical,  className: 'bg-violet-500/10 text-violet-700 border-violet-500/20' },
+  접근로:  { Icon: AccessRouteIcon, className: 'bg-sky-500/10 text-sky-700 border-sky-500/20' },
+  전용화장실: { Icon: Bath,        className: 'bg-indigo-500/10 text-indigo-700 border-indigo-500/20' },
+  무장애화장실: { Icon: Bath,     className: 'bg-cyan-500/10 text-cyan-700 border-cyan-500/20' },
+  정비:    { Icon: Wrench,        className: 'bg-zinc-500/10 text-zinc-700 border-zinc-500/20' },
+};
+function getBadgeStyle(badge) {
+  return BADGE_STYLES[badge] || { Icon: MapPin, className: 'bg-[#45a494]/10 text-[#45a494] border-[#45a494]/20' };
+}
+
+// 뱃지별 지도 핀 색상 (hex) — 휠체어 이용자 장애물은 빨강·주황 계열로 구분
+const BADGE_PIN_COLORS = {
+  계단: '#b91c1c', 오르막: '#ea580c', 내리막: '#c2410c', 자갈길: '#57534e', 턱: '#dc2626', 경사: '#ca8a04', 비포장: '#a16207', 협소: '#e8590c', 울퉁불퉁: '#92400e',
+  경사로: '#0d9488', 휠체어: '#2563eb', 화장실: '#d97706', 엘리베이터: '#7c3aed', 주차: '#475569',
+  무장애: '#059669', 슬로프: '#ea580c', 리프트: '#6d28d9', 접근로: '#0284c7', 전용화장실: '#4f46e5',
+  무장애화장실: '#0891b2', 정비: '#52525b',
+};
+const DEFAULT_PIN_COLOR = '#45a494';
+
+function getPrimaryBadge(placeInfo) {
+  const text = `${placeInfo.detailInfo || ''} ${placeInfo.disabledInfo || ''}`;
+  for (const kw of BADGE_KEYWORDS) {
+    if (text.includes(kw)) return kw;
+  }
+  return null;
+}
+
+function getPinColorForBadge(badge) {
+  return (badge && BADGE_PIN_COLORS[badge]) || DEFAULT_PIN_COLOR;
+}
+
+// 뱃지 색상의 핀 모양 SVG를 data URL로 생성 (원+삼각형 핀)
+function createPinDataUrl(hexColor, width, height) {
+  const w = width || 48;
+  const h = height || 52;
+  const r = Math.min(w, h) * 0.32;
+  const cx = w / 2;
+  const cy = r + 3;
+  const tipY = h - 2;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+  <defs><filter id="sd" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1" stdDeviation="1" flood-opacity="0.3"/></filter></defs>
+  <path d="M ${cx} ${tipY} L ${cx - r * 0.95} ${cy + r * 0.3} A ${r} ${r} 0 0 0 ${cx + r * 0.95} ${cy + r * 0.3} Z" fill="${hexColor}" filter="url(#sd)"/>
+  <circle cx="${cx}" cy="${cy - r * 0.15}" r="${r * 0.4}" fill="white" opacity="0.85"/>
+</svg>`;
+  return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
+}
+
+function parseRegionCsv(buffer, format) {
+  const text = new TextDecoder('euc-kr').decode(buffer);
+  const rows = text.trim().split(/\r?\n/);
+  rows.shift();
+  const places = [];
+  rows.forEach((line) => {
+    if (!line.trim()) return;
+    const cols = line.split(',');
+    if (format === 'hyopjae') {
+      const lat = parseFloat(cols[1]); const lng = parseFloat(cols[2]);
+      if (Number.isNaN(lat) || Number.isNaN(lng)) return;
+      const name = (cols[4] || '').trim();
+      const detailInfo = (cols[5] || '').trim();
+      const imageFile = (cols[6] || '').trim();
+      places.push({ lat, lng, name, detailInfo, disabledInfo: '', imageFile });
+    } else {
+      const name = (cols[2] || '').trim();
+      const detailInfo = (cols[3] || '').trim();
+      const disabledInfo = (cols[4] || '').trim();
+      places.push({ name, detailInfo, disabledInfo });
+    }
+  });
+  return places;
+}
+
+function extractBadgesFromPlaces(places) {
+  const set = new Set();
+  const combined = places.map((p) => `${p.detailInfo} ${p.disabledInfo}`).join(' ');
+  BADGE_KEYWORDS.forEach((kw) => {
+    if (combined.includes(kw)) set.add(kw);
+  });
+  return Array.from(set);
+}
+
+async function fetchRegionBadges(regionKey) {
+  const region = MAP_REGIONS.find((r) => r.value === regionKey);
+  if (!region) return [];
+  try {
+    const res = await fetch(encodePathForUrl(region.file), { cache: 'no-store' });
+    if (!res.ok) return [];
+    const buffer = await res.arrayBuffer();
+    const places = parseRegionCsv(buffer, region.format);
+    return extractBadgesFromPlaces(places);
+  } catch {
+    return [];
+  }
+}
+
+function useRegionBadges() {
+  const [regionBadges, setRegionBadges] = useState({});
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    Promise.all(
+      MAP_REGIONS.map(async (r) => {
+        const badges = await fetchRegionBadges(r.value);
+        return { key: r.value, badges };
+      })
+    ).then((results) => {
+      if (cancelled) return;
+      const map = {};
+      results.forEach(({ key, badges }) => { map[key] = badges; });
+      setRegionBadges(map);
+      setLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, []);
+  const getBadgesForRegion = (regionKey) => (regionKey ? (regionBadges[regionKey] || []) : []);
+  return { getBadgesForRegion, loading };
+}
 
 function loadKakaoMap(appkey) {
   return new Promise((resolve, reject) => {
@@ -144,7 +303,7 @@ const SafeImage = ({ src, alt, className }) => {
 
 // --- 하위 컴포넌트들을 App 외부로 분리 ---
 
-const HomeView = ({ searchQuery, setSearchQuery, selectedTag, setSelectedTag, tags, filteredReviews, favorites, toggleFavorite }) => (
+const HomeView = ({ searchQuery, setSearchQuery, selectedTag, setSelectedTag, tags, filteredReviews, favorites, toggleFavorite, getBadgesForRegion }) => (
   <div className="pb-24 animate-[fade-in_0.4s_ease-out]">
     <header className="sticky top-0 bg-white z-20 px-4 pt-8 pb-3 shadow-sm border-b border-gray-50 flex items-center gap-3">
       <div className="flex items-center gap-2 shrink-0">
@@ -208,6 +367,23 @@ const HomeView = ({ searchQuery, setSearchQuery, selectedTag, setSelectedTag, ta
             </div>
             <div className="p-4">
               <div className="flex items-center text-[#45a494] text-xs font-semibold mb-1"><MapPin className="w-3 h-3 mr-1" />{review.location}</div>
+              {review.regionKey && getBadgesForRegion && (() => {
+                const badges = getBadgesForRegion(review.regionKey);
+                if (badges.length === 0) return null;
+                return (
+                  <div className="flex flex-wrap gap-1.5 mb-2">
+                    {badges.map((badge) => {
+                      const { Icon, className } = getBadgeStyle(badge);
+                      return (
+                        <span key={badge} className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold rounded-md border ${className}`}>
+                          <Icon className="w-3 h-3 shrink-0" aria-hidden />
+                          {badge}
+                        </span>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
               <h3 className="font-bold text-lg">{review.user}님의 여행 기록</h3>
               <p className="text-gray-600 text-sm line-clamp-2 mt-2 leading-relaxed">{review.comment}</p>
             </div>
@@ -408,6 +584,22 @@ const ProfileView = ({ user, handleLogout, favoritesCount, onUpdateProfile, revi
   );
 };
 
+// 이 레벨보다 축소(숫자 큼)되면 핀 아래 명칭 숨김 (1~14, 기본 8)
+const LABEL_VISIBLE_MAX_LEVEL = 8;
+// 이 레벨보다 더 축소되면 핀 자체도 숨김 (예: 13 → 14에서 숨김)
+const PIN_VISIBLE_MAX_LEVEL = 13;
+
+// 줌 레벨별 핀 크기 (레벨 1 = 가장 확대 = 조금 작게, 레벨 14 = 가장 축소 = 조금 크게)
+function getMarkerSizeByLevel(level) {
+  const l = Math.max(1, Math.min(14, Number(level) || 6));
+  const t = (l - 1) / 13; // 0 at level 1, 1 at level 14
+  const width = Math.round(48 + t * 16);   // 48 ~ 64 (축소 레벨에서 더 작게)
+  const height = Math.round(52 + t * 17);   // 52 ~ 69
+  const offsetX = Math.round(width * 0.5);
+  const offsetY = height;
+  return { width, height, offsetX, offsetY };
+}
+
 // Kakao Maps + 무장애여행 CSV 연동 지도 뷰 (맵 탭용)
 function MapViewKakao() {
   const mapRef = useRef(null);
@@ -416,6 +608,7 @@ function MapViewKakao() {
   const mapInstanceRef = useRef(null);
   const kakaoRef = useRef(null);
   const currentLocationMarkerRef = useRef(null);
+  const zoomListenerRef = useRef(null);
   const [selectedRegion, setSelectedRegion] = useState(MAP_REGIONS[0].value);
   const [mapReady, setMapReady] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -498,41 +691,111 @@ function MapViewKakao() {
     if (!region) return;
     const kakao = kakaoRef.current;
     const map = mapInstanceRef.current;
+    if (zoomListenerRef.current) {
+      try { zoomListenerRef.current(); } catch (_) { /* 리스너 제거 실패 시 무시 */ }
+      zoomListenerRef.current = null;
+    }
     allMarkersRef.current.forEach((item) => { item.marker.setMap(null); item.labelOverlay.setMap(null); item.infoCardOverlay.setMap(null); });
     allMarkersRef.current = [];
     if (currentInfoCardRef.current) { currentInfoCardRef.current.setMap(null); currentInfoCardRef.current = null; }
-    const customMarkerImage = { url: 'https://t1.daumcdn.net/localimg/localimages/07/mapapidoc/marker_red.png', size: new kakao.maps.Size(64, 69), offset: new kakao.maps.Point(27, 69) };
+    const imageBaseUrl = region.imageBaseUrl || '';
+    const createMarkerImageForLevel = (level, hexColor) => {
+      const s = getMarkerSizeByLevel(level);
+      const url = createPinDataUrl(hexColor || DEFAULT_PIN_COLOR, s.width, s.height);
+      return new kakao.maps.MarkerImage(url, new kakao.maps.Size(s.width, s.height), { offset: new kakao.maps.Point(s.offsetX, s.offsetY) });
+    };
     const createMarkerWithLabel = (position, placeInfo) => {
+      const primaryBadge = getPrimaryBadge(placeInfo);
+      const pinColor = getPinColorForBadge(primaryBadge);
       const markerOption = { position };
-      if (customMarkerImage?.url) markerOption.image = new kakao.maps.MarkerImage(customMarkerImage.url, customMarkerImage.size, { offset: customMarkerImage.offset });
+      markerOption.image = createMarkerImageForLevel(map.getLevel(), pinColor);
       const marker = new kakao.maps.Marker(markerOption);
-      marker.setMap(map);
+      marker.setMap(map.getLevel() <= PIN_VISIBLE_MAX_LEVEL ? map : null);
       const overlayContent = '<div style="padding:5px 10px;background:#fff;border:1px solid #ddd;border-radius:4px;font-size:12px;white-space:nowrap;margin-top:8px;">' + placeInfo.name + '</div>';
       const customOverlay = new kakao.maps.CustomOverlay({ position, content: overlayContent, yAnchor: 0 });
-      customOverlay.setMap(map);
-      const cardHtml = '<div style="min-width:180px;max-width:260px;padding:12px 14px;background:#fff;border:1px solid #e0e0e0;border-radius:8px;font-size:12px;">' + '<div style="font-weight:700;margin-bottom:8px;">' + (placeInfo.name || '-') + '</div>' + (placeInfo.detailInfo ? '<div style="color:#666;margin-bottom:4px;">' + placeInfo.detailInfo + '</div>' : '') + (placeInfo.disabledInfo ? '<div style="color:#666;margin-bottom:4px;">' + placeInfo.disabledInfo + '</div>' : '') + (placeInfo.modifiedAt ? '<div style="color:#888;font-size:11px;">기준일자 ' + placeInfo.modifiedAt + '</div>' : '') + '</div>';
+      customOverlay.setMap(map.getLevel() <= LABEL_VISIBLE_MAX_LEVEL ? map : null);
+      let cardBody = '<div style="font-weight:700;margin-bottom:8px;">' + (placeInfo.name || '-') + '</div>';
+      if (placeInfo.imageFile && imageBaseUrl) {
+        cardBody += '<img src="' + encodePathForUrl(imageBaseUrl + placeInfo.imageFile) + '" alt="" style="width:100%;max-width:200px;border-radius:6px;margin-bottom:6px;display:block;" />';
+      }
+      cardBody += (placeInfo.detailInfo ? '<div style="color:#666;margin-bottom:4px;">' + placeInfo.detailInfo + '</div>' : '') + (placeInfo.disabledInfo ? '<div style="color:#666;margin-bottom:4px;">' + placeInfo.disabledInfo + '</div>' : '') + (placeInfo.modifiedAt ? '<div style="color:#888;font-size:11px;">기준일자 ' + placeInfo.modifiedAt + '</div>' : '');
+      const cardHtml = '<div style="min-width:180px;max-width:260px;padding:12px 14px;background:#fff;border:1px solid #e0e0e0;border-radius:8px;font-size:12px;line-height:1.5;white-space:pre-line;word-break:keep-all;">' + cardBody + '</div>';
       const infoCardOverlay = new kakao.maps.CustomOverlay({ position, content: cardHtml, yAnchor: 1.2, xAnchor: 0.5 });
       kakao.maps.event.addListener(marker, 'mouseover', () => { if (currentInfoCardRef.current) currentInfoCardRef.current.setMap(null); infoCardOverlay.setMap(map); currentInfoCardRef.current = infoCardOverlay; });
       kakao.maps.event.addListener(marker, 'mouseout', () => { infoCardOverlay.setMap(null); if (currentInfoCardRef.current === infoCardOverlay) currentInfoCardRef.current = null; });
-      return { marker, labelOverlay: customOverlay, infoCardOverlay, position };
+      return { marker, labelOverlay: customOverlay, infoCardOverlay, position, primaryBadge };
     };
-    fetch(region.file).then((res) => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.arrayBuffer(); })
+    const csvUrl = encodePathForUrl(region.file);
+    const isHyopjae = region.format === 'hyopjae';
+    // 협재: 지도 중심을 먼저 이동해 두어 핀이 보이도록 함
+    if (isHyopjae) {
+      map.setCenter(new kakao.maps.LatLng(33.393, 126.239));
+      map.setLevel(6);
+    }
+    fetch(csvUrl, { cache: 'no-store' }).then((res) => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.arrayBuffer(); })
       .then((buffer) => {
         if (!mapInstanceRef.current || !kakaoRef.current) return;
-        const text = new TextDecoder('euc-kr').decode(buffer);
-        const rows = text.trim().split(/\r?\n/); rows.shift();
+        let text = new TextDecoder('euc-kr').decode(buffer);
+        // SPA 폴백 등으로 HTML이 오면 CSV가 아니므로 파싱 스킵
+        if (text.trimStart().startsWith('<')) {
+          console.error('CSV 대신 HTML이 수신됨. 경로 확인:', csvUrl);
+          return;
+        }
+        let rows = text.trim().split(/\r?\n/);
+        if (rows.length <= 1) rows = [];
+        else rows.shift();
+        // 협재 전용: EUC-KR로 유효 행이 없으면 UTF-8로 재시도 (파일 인코딩 차이 대응)
+        const tryUtf8 = isHyopjae && rows.length > 0 && (() => {
+          const first = rows[0].split(',');
+          const lat = parseFloat(first[1]); const lng = parseFloat(first[2]);
+          return Number.isNaN(lat) || Number.isNaN(lng);
+        })();
+        if (tryUtf8) {
+          text = new TextDecoder('utf-8').decode(buffer);
+          const lines = text.trim().split(/\r?\n/);
+          if (lines.length > 1) { lines.shift(); rows = lines; }
+        }
         const allMarkers = [];
         rows.forEach((line, index) => {
           if (!line.trim()) return;
           const cols = line.split(',');
-          const lat = parseFloat(cols[0]); const lng = parseFloat(cols[1]);
-          if (Number.isNaN(lat) || Number.isNaN(lng)) return;
-          const position = new kakao.maps.LatLng(lat, lng);
-          const placeInfo = { name: (cols[2] || '').trim(), detailInfo: (cols[3] || '').trim(), disabledInfo: (cols[4] || '').trim(), modifiedAt: (cols[7] || '').trim() };
-          if (index === 0) { map.setCenter(position); map.setLevel(6); }
-          allMarkers.push(createMarkerWithLabel(position, placeInfo));
+          let lat, lng, position, placeInfo;
+          if (isHyopjae) {
+            if (cols.length < 7) return;
+            lat = parseFloat(cols[1]); lng = parseFloat(cols[2]);
+            if (Number.isNaN(lat) || Number.isNaN(lng)) return;
+            position = new kakao.maps.LatLng(lat, lng);
+            placeInfo = { name: (cols[4] || '').trim(), detailInfo: (cols[5] || '').trim(), disabledInfo: '', modifiedAt: '', imageFile: (cols[6] || '').trim() };
+          } else {
+            lat = parseFloat(cols[0]); lng = parseFloat(cols[1]);
+            if (Number.isNaN(lat) || Number.isNaN(lng)) return;
+            position = new kakao.maps.LatLng(lat, lng);
+            placeInfo = { name: (cols[2] || '').trim(), detailInfo: (cols[3] || '').trim(), disabledInfo: (cols[4] || '').trim(), modifiedAt: (cols[7] || '').trim() };
+          }
+          if (index === 0 && !isHyopjae) { map.setCenter(position); map.setLevel(6); }
+          try {
+            allMarkers.push(createMarkerWithLabel(position, placeInfo));
+          } catch (e) {
+            console.warn('마커 생성 스킵:', position, e);
+          }
         });
         allMarkersRef.current = allMarkers;
+        const updateMarkersSize = () => {
+          const level = map.getLevel();
+          const showLabels = level <= LABEL_VISIBLE_MAX_LEVEL;
+          const showPins = level <= PIN_VISIBLE_MAX_LEVEL;
+          allMarkersRef.current.forEach((item) => {
+            const color = getPinColorForBadge(item.primaryBadge);
+            item.marker.setImage(createMarkerImageForLevel(level, color));
+            item.marker.setMap(showPins ? map : null);
+            item.labelOverlay.setMap(showLabels && showPins ? map : null);
+          });
+        };
+        const listenerId = kakao.maps.event.addListener(map, 'zoom_changed', updateMarkersSize);
+        zoomListenerRef.current = () => {
+          const k = kakaoRef.current;
+          if (k?.maps?.event?.removeListener) k.maps.event.removeListener(listenerId);
+        };
         if (map.relayout) requestAnimationFrame(() => map.relayout());
       }).catch((err) => console.error('CSV 로딩 실패:', err));
   }, [selectedRegion, mapReady]);
@@ -960,6 +1223,7 @@ const App = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTag, setSelectedTag] = useState("전체");
   const [reviews, setReviews] = useState(REVIEWS);
+  const { getBadgesForRegion } = useRegionBadges();
   const [favorites, setFavorites] = useState(() => {
     const saved = localStorage.getItem('gochigage-favorites');
     return saved ? JSON.parse(saved) : [];
@@ -1101,6 +1365,7 @@ const App = () => {
               filteredReviews={filteredReviews}
               favorites={favorites}
               toggleFavorite={toggleFavorite}
+              getBadgesForRegion={getBadgesForRegion}
             />
           )}
           
