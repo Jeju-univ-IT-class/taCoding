@@ -124,13 +124,15 @@ function encodePathForUrl(path) {
 }
 
 // 지역별 CSV 목록 (Kakao Map 무장애여행 마커용)
+// dbRegion: Supabase places.region 값 (현재는 숫자 코드 문자열 사용: '12','14',...)
 const MAP_REGIONS = [
-  { value: '12-법환포구', label: '법환포구', file: '/region_12.csv' },
-  { value: '14-토끼섬과하도포구', label: '토끼섬과하도포구', file: '/region_14.csv' },
-  { value: '35-해녀박물관', label: '해녀박물관', file: '/region_35.csv' },
-  { value: '49-동문시장', label: '동문시장', file: '/region_49.csv' },
-  { value: '50-제주도립미술관', label: '제주도립미술관', file: '/region_50.csv' },
-  { value: 'hyopjae-협재해수욕장', label: '협재 해수욕장', file: HYOPJAE_CSV, format: 'hyopjae', imageBaseUrl: HYOPJAE_IMAGES },
+  { value: '12-법환포구',           label: '법환포구',       file: '/region_12.csv', dbRegion: '12' },
+  { value: '14-토끼섬과하도포구',   label: '토끼섬과하도포구', file: '/region_14.csv', dbRegion: '14' },
+  { value: '35-해녀박물관',         label: '해녀박물관',     file: '/region_35.csv', dbRegion: '35' },
+  { value: '49-동문시장',           label: '동문시장',       file: '/region_49.csv', dbRegion: '49' },
+  { value: '50-제주도립미술관',     label: '제주도립미술관', file: '/region_50.csv', dbRegion: '50' },
+  // 협재 해수욕장은 Supabase places.region = '10' 으로 저장
+  { value: 'hyopjae-협재해수욕장', label: '협재 해수욕장', file: HYOPJAE_CSV, format: 'hyopjae', imageBaseUrl: HYOPJAE_IMAGES, dbRegion: '10' },
 ];
 
 // CSV에서 무장애/장애물 관련 뱃지로 쓸 키워드 (휠체어 이용자 장애물 우선, 그다음 시설)
@@ -191,8 +193,21 @@ function getPinColorForBadge(badge) {
   return (badge && BADGE_PIN_COLORS[badge]) || DEFAULT_PIN_COLOR;
 }
 
+// 지도 범례용 그룹 구성
+const BADGE_LEGEND_GROUPS = [
+  {
+    title: '이동 시 주의 지형',
+    items: ['계단', '오르막', '내리막', '자갈길', '턱', '경사', '비포장', '협소', '울퉁불퉁'],
+  },
+  {
+    title: '편의 시설·무장애 정보',
+    items: ['경사로', '휠체어', '화장실', '엘리베이터', '주차', '무장애', '슬로프', '리프트', '접근로', '전용화장실', '무장애화장실', '정비'],
+  },
+];
+
 // 뱃지 색상의 핀 모양 SVG를 data URL로 생성 (원+삼각형 핀)
-function createPinDataUrl(hexColor, width, height) {
+// isSelected 가 true이면 대비되는 흰색 외곽선을 추가해 강조
+function createPinDataUrl(hexColor, width, height, isSelected = false) {
   const w = width || 48;
   const h = height || 52;
   const r = Math.min(w, h) * 0.32;
@@ -201,8 +216,10 @@ function createPinDataUrl(hexColor, width, height) {
   const tipY = h - 2;
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
   <defs><filter id="sd" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1" stdDeviation="1" flood-opacity="0.3"/></filter></defs>
-  <path d="M ${cx} ${tipY} L ${cx - r * 0.95} ${cy + r * 0.3} A ${r} ${r} 0 0 0 ${cx + r * 0.95} ${cy + r * 0.3} Z" fill="${hexColor}" filter="url(#sd)"/>
-  <circle cx="${cx}" cy="${cy - r * 0.15}" r="${r * 0.4}" fill="white" opacity="0.85"/>
+  <path d="M ${cx} ${tipY} L ${cx - r * 0.95} ${cy + r * 0.3} A ${r} ${r} 0 0 0 ${cx + r * 0.95} ${cy + r * 0.3} Z"
+        fill="${hexColor}" ${isSelected ? 'stroke="white" stroke-width="3"' : ''} filter="url(#sd)"/>
+  <circle cx="${cx}" cy="${cy - r * 0.15}" r="${r * 0.4}" fill="white" opacity="0.9"
+          ${isSelected ? 'stroke="white" stroke-width="2"' : ''}/>
 </svg>`;
   return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
 }
@@ -646,6 +663,7 @@ function MapViewKakao() {
   const mapRef = useRef(null);
   const allMarkersRef = useRef([]);
   const currentInfoCardRef = useRef(null);
+  const selectedMarkerRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const kakaoRef = useRef(null);
   const currentLocationMarkerRef = useRef(null);
@@ -654,6 +672,7 @@ function MapViewKakao() {
   const [mapReady, setMapReady] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [locationError, setLocationError] = useState(null);
+  const [showLegend, setShowLegend] = useState(false);
 
   const handleZoomIn = () => {
     const map = mapInstanceRef.current;
@@ -711,6 +730,25 @@ function MapViewKakao() {
       kakaoRef.current = kakao;
       const map = new kakao.maps.Map(container, { center: new kakao.maps.LatLng(33.450701, 126.570667), level: 3 });
       mapInstanceRef.current = map;
+
+      // 지도를 클릭하면 선택된 핀 강조/카드 상태 초기화
+      kakao.maps.event.addListener(map, 'click', () => {
+        if (currentInfoCardRef.current) {
+          currentInfoCardRef.current.setMap(null);
+          currentInfoCardRef.current = null;
+        }
+        if (selectedMarkerRef.current) {
+          // 지도 클릭 시에는 zIndex 및 선택 상태만 초기화 (아이콘은 다음 줌 변경 시 갱신)
+          const prevMarker = selectedMarkerRef.current;
+          const prevItem = allMarkersRef.current.find((it) => it.marker === prevMarker);
+          prevMarker.setZIndex(0);
+          if (prevItem) {
+            prevItem.isSelected = false;
+          }
+          selectedMarkerRef.current = null;
+        }
+      });
+
       requestAnimationFrame(() => { if (map.relayout) map.relayout(); setMapReady(true); });
     }).catch((e) => console.error('Kakao Maps 로드 실패', e));
     return () => {
@@ -740,9 +778,9 @@ function MapViewKakao() {
     allMarkersRef.current = [];
     if (currentInfoCardRef.current) { currentInfoCardRef.current.setMap(null); currentInfoCardRef.current = null; }
     const imageBaseUrl = region.imageBaseUrl || '';
-    const createMarkerImageForLevel = (level, hexColor) => {
+    const createMarkerImageForLevel = (level, hexColor, isSelected = false) => {
       const s = getMarkerSizeByLevel(level);
-      const url = createPinDataUrl(hexColor || DEFAULT_PIN_COLOR, s.width, s.height);
+      const url = createPinDataUrl(hexColor || DEFAULT_PIN_COLOR, s.width, s.height, isSelected);
       return new kakao.maps.MarkerImage(url, new kakao.maps.Size(s.width, s.height), { offset: new kakao.maps.Point(s.offsetX, s.offsetY) });
     };
     const createMarkerWithLabel = (position, placeInfo) => {
@@ -754,7 +792,8 @@ function MapViewKakao() {
       marker.setMap(map.getLevel() <= PIN_VISIBLE_MAX_LEVEL ? map : null);
       const overlayContent = '<div style="padding:5px 10px;background:#fff;border:1px solid #ddd;border-radius:4px;font-size:12px;white-space:nowrap;margin-top:8px;">' + placeInfo.name + '</div>';
       const customOverlay = new kakao.maps.CustomOverlay({ position, content: overlayContent, yAnchor: 0 });
-      customOverlay.setMap(map.getLevel() <= LABEL_VISIBLE_MAX_LEVEL ? map : null);
+      // 기본 상태에서는 명칭 라벨을 숨기고, 호버 시에만 노출
+      customOverlay.setMap(null);
       let cardBody = '<div style="font-weight:700;margin-bottom:8px;">' + (placeInfo.name || '-') + '</div>';
       if (placeInfo.imageFile && imageBaseUrl) {
         cardBody += '<img src="' + encodePathForUrl(imageBaseUrl + placeInfo.imageFile) + '" alt="" style="width:100%;max-width:200px;border-radius:6px;margin-bottom:6px;display:block;" />';
@@ -762,58 +801,87 @@ function MapViewKakao() {
       cardBody += (placeInfo.detailInfo ? '<div style="color:#666;margin-bottom:4px;">' + placeInfo.detailInfo + '</div>' : '') + (placeInfo.disabledInfo ? '<div style="color:#666;margin-bottom:4px;">' + placeInfo.disabledInfo + '</div>' : '') + (placeInfo.modifiedAt ? '<div style="color:#888;font-size:11px;">기준일자 ' + placeInfo.modifiedAt + '</div>' : '');
       const cardHtml = '<div style="min-width:180px;max-width:260px;padding:12px 14px;background:#fff;border:1px solid #e0e0e0;border-radius:8px;font-size:12px;line-height:1.5;white-space:pre-line;word-break:keep-all;">' + cardBody + '</div>';
       const infoCardOverlay = new kakao.maps.CustomOverlay({ position, content: cardHtml, yAnchor: 1.2, xAnchor: 0.5 });
-      kakao.maps.event.addListener(marker, 'mouseover', () => { if (currentInfoCardRef.current) currentInfoCardRef.current.setMap(null); infoCardOverlay.setMap(map); currentInfoCardRef.current = infoCardOverlay; });
-      kakao.maps.event.addListener(marker, 'mouseout', () => { infoCardOverlay.setMap(null); if (currentInfoCardRef.current === infoCardOverlay) currentInfoCardRef.current = null; });
-      return { marker, labelOverlay: customOverlay, infoCardOverlay, position, primaryBadge };
+
+      // 호버 시 명칭만 표시
+      kakao.maps.event.addListener(marker, 'mouseover', () => {
+        if (map.getLevel() <= LABEL_VISIBLE_MAX_LEVEL) {
+          customOverlay.setMap(map);
+        }
+      });
+      kakao.maps.event.addListener(marker, 'mouseout', () => {
+        customOverlay.setMap(null);
+      });
+
+      // 클릭 시 해당 핀 강조 + 포커싱 + 세부 카드 표시
+      kakao.maps.event.addListener(marker, 'click', () => {
+        // 이전 선택 카드 제거
+        if (currentInfoCardRef.current) {
+          currentInfoCardRef.current.setMap(null);
+        }
+        infoCardOverlay.setMap(map);
+        currentInfoCardRef.current = infoCardOverlay;
+
+        // 이전 선택 핀 강조 해제
+        if (selectedMarkerRef.current) {
+          const prevMarker = selectedMarkerRef.current;
+          const prevItem = allMarkersRef.current.find((it) => it.marker === prevMarker);
+          prevMarker.setZIndex(0);
+          if (prevItem) {
+            const baseColorPrev = getPinColorForBadge(prevItem.primaryBadge);
+            prevMarker.setImage(createMarkerImageForLevel(map.getLevel(), baseColorPrev, false));
+            prevItem.isSelected = false;
+          }
+        }
+
+        // 현재 선택 핀 강조 (테두리 있는 아이콘 + zIndex)
+        marker.setZIndex(10);
+        const baseColor = getPinColorForBadge(primaryBadge);
+        marker.setImage(createMarkerImageForLevel(map.getLevel(), baseColor, true));
+        selectedMarkerRef.current = marker;
+        const thisItem = allMarkersRef.current.find((it) => it.marker === marker);
+        if (thisItem) thisItem.isSelected = true;
+
+        // 선택한 핀으로 지도 포커싱
+        map.panTo(position);
+        // 너무 과한 확대는 피하고, 조작감을 위해 레벨 3까지만 자동 확대
+        const currentLevel = map.getLevel();
+        if (currentLevel > 3) {
+          map.setLevel(3);
+        }
+      });
+      return { marker, labelOverlay: customOverlay, infoCardOverlay, position, primaryBadge, isSelected: false };
     };
-    const csvUrl = encodePathForUrl(region.file);
-    const isHyopjae = region.format === 'hyopjae';
-    // 협재: 지도 중심을 먼저 이동해 두어 핀이 보이도록 함
-    if (isHyopjae) {
-      map.setCenter(new kakao.maps.LatLng(33.393, 126.239));
-      map.setLevel(6);
-    }
-    fetch(csvUrl, { cache: 'no-store' }).then((res) => { if (!res.ok) throw new Error(`HTTP ${res.status}`); return res.arrayBuffer(); })
-      .then((buffer) => {
-        if (!mapInstanceRef.current || !kakaoRef.current) return;
-        let text = new TextDecoder('euc-kr').decode(buffer);
-        // SPA 폴백 등으로 HTML이 오면 CSV가 아니므로 파싱 스킵
-        if (text.trimStart().startsWith('<')) {
-          console.error('CSV 대신 HTML이 수신됨. 경로 확인:', csvUrl);
+    // Supabase places 테이블에서 선택된 region의 장소들을 불러와 마커 생성
+    let cancelled = false;
+    (async () => {
+      try {
+        const dbRegion = region.dbRegion || selectedRegion;
+        const placeRows = await db.places.findByRegion(dbRegion);
+        if (cancelled || !mapInstanceRef.current || !kakaoRef.current) return;
+
+        if (!Array.isArray(placeRows) || placeRows.length === 0) {
+          console.warn('선택된 지역에 Supabase places 데이터가 없습니다:', selectedRegion, dbRegion);
           return;
         }
-        let rows = text.trim().split(/\r?\n/);
-        if (rows.length <= 1) rows = [];
-        else rows.shift();
-        // 협재 전용: EUC-KR로 유효 행이 없으면 UTF-8로 재시도 (파일 인코딩 차이 대응)
-        const tryUtf8 = isHyopjae && rows.length > 0 && (() => {
-          const first = rows[0].split(',');
-          const lat = parseFloat(first[1]); const lng = parseFloat(first[2]);
-          return Number.isNaN(lat) || Number.isNaN(lng);
-        })();
-        if (tryUtf8) {
-          text = new TextDecoder('utf-8').decode(buffer);
-          const lines = text.trim().split(/\r?\n/);
-          if (lines.length > 1) { lines.shift(); rows = lines; }
-        }
+
         const allMarkers = [];
-        rows.forEach((line, index) => {
-          if (!line.trim()) return;
-          const cols = line.split(',');
-          let lat, lng, position, placeInfo;
-          if (isHyopjae) {
-            if (cols.length < 7) return;
-            lat = parseFloat(cols[1]); lng = parseFloat(cols[2]);
-            if (Number.isNaN(lat) || Number.isNaN(lng)) return;
-            position = new kakao.maps.LatLng(lat, lng);
-            placeInfo = { name: (cols[4] || '').trim(), detailInfo: (cols[5] || '').trim(), disabledInfo: '', modifiedAt: '', imageFile: (cols[6] || '').trim() };
-          } else {
-            lat = parseFloat(cols[0]); lng = parseFloat(cols[1]);
-            if (Number.isNaN(lat) || Number.isNaN(lng)) return;
-            position = new kakao.maps.LatLng(lat, lng);
-            placeInfo = { name: (cols[2] || '').trim(), detailInfo: (cols[3] || '').trim(), disabledInfo: (cols[4] || '').trim(), modifiedAt: (cols[7] || '').trim() };
+        placeRows.forEach((p, index) => {
+          if (p.latitude == null || p.longitude == null) return;
+          const lat = Number(p.latitude);
+          const lng = Number(p.longitude);
+          if (Number.isNaN(lat) || Number.isNaN(lng)) return;
+          const position = new kakao.maps.LatLng(lat, lng);
+          const placeInfo = {
+            name: p.name || '',
+            detailInfo: p.detail_info || '',
+            disabledInfo: p.disabled_info || '',
+            modifiedAt: p.modified_at || '',
+            imageFile: null,
+          };
+          if (index === 0) {
+            map.setCenter(position);
+            map.setLevel(6);
           }
-          if (index === 0 && !isHyopjae) { map.setCenter(position); map.setLevel(6); }
           try {
             allMarkers.push(createMarkerWithLabel(position, placeInfo));
           } catch (e) {
@@ -821,24 +889,37 @@ function MapViewKakao() {
           }
         });
         allMarkersRef.current = allMarkers;
+
         const updateMarkersSize = () => {
           const level = map.getLevel();
           const showLabels = level <= LABEL_VISIBLE_MAX_LEVEL;
           const showPins = level <= PIN_VISIBLE_MAX_LEVEL;
           allMarkersRef.current.forEach((item) => {
             const color = getPinColorForBadge(item.primaryBadge);
-            item.marker.setImage(createMarkerImageForLevel(level, color));
+            item.marker.setImage(createMarkerImageForLevel(level, color, !!item.isSelected));
             item.marker.setMap(showPins ? map : null);
-            item.labelOverlay.setMap(showLabels && showPins ? map : null);
+            // 라벨은 기본 상태에서는 숨기고, 호버 이벤트에서만 제어
+            if (!showPins) {
+              item.labelOverlay.setMap(null);
+            }
           });
         };
+
         const listenerId = kakao.maps.event.addListener(map, 'zoom_changed', updateMarkersSize);
         zoomListenerRef.current = () => {
           const k = kakaoRef.current;
           if (k?.maps?.event?.removeListener) k.maps.event.removeListener(listenerId);
         };
+
         if (map.relayout) requestAnimationFrame(() => map.relayout());
-      }).catch((err) => console.error('CSV 로딩 실패:', err));
+      } catch (err) {
+        console.error('Supabase places 로딩 실패:', err);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [selectedRegion, mapReady]);
 
   const currentRegionLabel = MAP_REGIONS.find((r) => r.value === selectedRegion)?.label ?? selectedRegion;
@@ -875,6 +956,53 @@ function MapViewKakao() {
       </div>
       <div className="flex-1 relative overflow-hidden min-h-[320px] bg-gray-50 isolate">
         <div ref={mapRef} className="absolute inset-0 w-full z-0" style={{ minHeight: 320 }} />
+
+        {/* 범례 토글 버튼 (좌상단) */}
+        <button
+          type="button"
+          onClick={() => setShowLegend((v) => !v)}
+          className="absolute top-4 left-4 z-20 px-3 py-1.5 rounded-full bg-white/95 border border-gray-200 shadow-sm text-[11px] font-bold text-gray-700 flex items-center gap-1.5 pointer-events-auto"
+        >
+          <Layers className="w-3 h-3 text-[#45a494]" />
+          <span>범례</span>
+          <ChevronDown
+            className={`w-3 h-3 text-gray-400 transition-transform ${showLegend ? 'rotate-180' : ''}`}
+          />
+        </button>
+
+        {/* 핀 색상 범례 패널 */}
+        {showLegend && (
+          <div className="absolute bottom-4 left-4 z-10 max-w-[70%] pointer-events-auto">
+            <div className="bg-white/95 backdrop-blur-sm border border-gray-200 rounded-2xl shadow-md px-3 py-2.5 text-[10px] text-gray-700">
+              <p className="font-bold text-[11px] mb-1.5 flex items-center gap-1">
+                <Layers className="w-3 h-3 text-gray-400" />
+                색상별 의미
+              </p>
+              <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                {BADGE_LEGEND_GROUPS.map((group) => (
+                  <div key={group.title} className="flex flex-col gap-0.5">
+                    <span className="text-[9px] text-gray-400 font-semibold">{group.title}</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {group.items.map((badge) => (
+                        <span
+                          key={badge}
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full border border-gray-100 bg-gray-50/60"
+                        >
+                          <span
+                            className="inline-block w-2 h-2 rounded-full"
+                            style={{ backgroundColor: BADGE_PIN_COLORS[badge] || DEFAULT_PIN_COLOR }}
+                          />
+                          <span className="text-[9px] font-medium whitespace-nowrap">{badge}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="absolute bottom-8 right-4 flex flex-col gap-2 z-10 pointer-events-auto" aria-label="지도 컨트롤">
           <button type="button" onClick={handleCurrentLocation} className="w-10 h-10 bg-white rounded-lg shadow-md flex items-center justify-center text-gray-600 hover:bg-gray-50 active:scale-95 transition-transform" aria-label="현재 위치로 이동">
             <Navigation className="w-5 h-5" />
@@ -1340,7 +1468,7 @@ export default function App() {
               </div>
             </div>
           )}
-          {activeTab === 'map' && <MapView />}
+          {activeTab === 'map' && <MapViewKakao />}
         </main>
 
         <nav className="fixed bottom-0 w-full max-w-md bg-white/80 backdrop-blur-lg border-t border-gray-100 px-6 py-3 flex justify-between items-center z-20">
