@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Search, Map as MapIcon, Star, Heart, MessageSquare, User, Home, MapPin, ChevronRight, ChevronDown, Filter, ImageOff, Plus, Minus, Navigation, LogOut, Mail, Lock, Loader2, Camera, Edit2, Check, X, TrendingUp, TrendingDown, Accessibility, Bath, Car, Wrench, MoveVertical, Layers, CircleDot, Image as ImageIcon } from 'lucide-react';
+import { Search, Map as MapIcon, Star, Heart, MessageSquare, User, Home, MapPin, ChevronRight, ChevronDown, Filter, ImageOff, Plus, Minus, Navigation, LogOut, Mail, Lock, Loader2, Camera, Edit2, Check, X, TrendingUp, TrendingDown, Accessibility, Bath, Car, Wrench, MoveVertical, Layers, CircleDot, Image as ImageIcon, Tag, FileText } from 'lucide-react';
 import db from './services/db';
 
 /**
@@ -249,24 +249,30 @@ function parseRegionCsv(buffer, format) {
   return places;
 }
 
+// detail_info, disabled_info 텍스트에서 BADGE_KEYWORDS 매칭해 뱃지 목록 반환
 function extractBadgesFromPlaces(places) {
   const set = new Set();
-  const combined = places.map((p) => `${p.detailInfo} ${p.disabledInfo}`).join(' ');
+  const combined = places
+    .map((p) => `${p.detailInfo ?? p.detail_info ?? ''} ${p.disabledInfo ?? p.disabled_info ?? ''}`)
+    .join(' ');
   BADGE_KEYWORDS.forEach((kw) => {
     if (combined.includes(kw)) set.add(kw);
   });
   return Array.from(set);
 }
 
+// Supabase places 테이블에서 지역별 장소 조회 후 무장애/장애물 뱃지 추출
 async function fetchRegionBadges(regionKey) {
   const region = MAP_REGIONS.find((r) => r.value === regionKey);
-  if (!region) return [];
+  if (!region?.dbRegion) return [];
   try {
-    const res = await fetch(encodePathForUrl(region.file), { cache: 'no-store' });
-    if (!res.ok) return [];
-    const buffer = await res.arrayBuffer();
-    const places = parseRegionCsv(buffer, region.format);
-    return extractBadgesFromPlaces(places);
+    const places = await db.places.findByRegion(region.dbRegion);
+    if (!Array.isArray(places) || places.length === 0) return [];
+    const normalized = places.map((p) => ({
+      detailInfo: p.detail_info ?? '',
+      disabledInfo: p.disabled_info ?? ''
+    }));
+    return extractBadgesFromPlaces(normalized);
   } catch {
     return [];
   }
@@ -329,7 +335,8 @@ const SafeImage = ({ src, alt, className }) => {
 
 // --- 서브 뷰 컴포넌트 ---
 
-const HomeView = ({ searchQuery, setSearchQuery, selectedTag, setSelectedTag, tags, filteredReviews, favorites, toggleFavorite, getBadgesForRegion }) => (
+// 홈: posts 카드 (클릭 시 인스타 스타일 상세)
+const HomeView = ({ searchQuery, setSearchQuery, selectedTag, setSelectedTag, tags, filteredPosts, onPostClick }) => (
   <div className="pb-24 animate-[fade-in_0.4s_ease-out]">
     <header className="sticky top-0 bg-white z-20 px-4 pt-8 pb-3 shadow-sm border-b border-gray-50 flex items-center gap-3">
       <div className="flex items-center gap-2 shrink-0">
@@ -347,7 +354,7 @@ const HomeView = ({ searchQuery, setSearchQuery, selectedTag, setSelectedTag, ta
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           type="text"
-          placeholder="어디가 궁금하신가요?"
+          placeholder="제목, 내용, 태그 검색"
           className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-2 pl-9 pr-3 focus:outline-none focus:ring-2 focus:ring-[#45a494]/20 text-xs transition-all shadow-sm"
         />
       </div>
@@ -367,56 +374,179 @@ const HomeView = ({ searchQuery, setSearchQuery, selectedTag, setSelectedTag, ta
     </div>
 
     <div className="p-4 space-y-6">
-      {filteredReviews.length > 0 ? (
-        filteredReviews.map((review) => (
-          <div key={review.id} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 hover:shadow-md transition-shadow">
+      {filteredPosts.length > 0 ? (
+        filteredPosts.map((post) => (
+          <button
+            key={post.id}
+            type="button"
+            onClick={() => onPostClick(post)}
+            className="w-full text-left bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 hover:shadow-md transition-shadow"
+          >
             <div className="relative h-64">
-              <SafeImage src={review.image} alt={review.location} className="w-full h-full object-cover" />
-              <div className="absolute top-4 left-4 flex gap-2">
-                {(review.tags || []).map(tag => (
+              <SafeImage src={post.image_url} alt={post.title} className="w-full h-full object-cover" />
+              <div className="absolute top-4 left-4 flex gap-2 flex-wrap">
+                {(post.tags || []).map((tag) => (
                   <span key={tag} className="px-3 py-1 bg-black/40 backdrop-blur-md text-white text-[10px] font-bold rounded-full">#{tag}</span>
                 ))}
               </div>
-              <button 
-                onClick={(e) => toggleFavorite(review.id, e)}
-                className={`absolute top-4 right-4 p-2 backdrop-blur-md rounded-full transition-colors ${favorites.includes(review.id) ? 'bg-red-50 text-white shadow-sm' : 'bg-black/20 text-white'}`}
-              >
-                <Heart className={`w-5 h-5 ${favorites.includes(review.id) ? 'fill-red-500 text-red-500' : ''}`} />
-              </button>
-              <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg text-xs font-bold shadow-sm">
-                <Star className="inline w-3 h-3 text-yellow-500 fill-yellow-500 mr-1" /> {review.rating || 5.0}
+              <div className="absolute bottom-4 left-4 right-4 flex items-center gap-3 text-white text-xs font-bold">
+                <span className="flex items-center gap-1"><Heart className="w-4 h-4" /> {post.likes_count ?? 0}</span>
+                <span className="flex items-center gap-1"><MessageSquare className="w-4 h-4" /> {post.comments_count ?? 0}</span>
               </div>
             </div>
             <div className="p-4">
-              <div className="flex items-center text-[#45a494] text-xs font-semibold mb-1"><MapPin className="w-3 h-3 mr-1" />{review.location}</div>
-              {review.regionKey && getBadgesForRegion && (() => {
-                const badges = getBadgesForRegion(review.regionKey);
-                if (badges.length === 0) return null;
-                return (
-                  <div className="flex flex-wrap gap-1.5 mb-2">
-                    {badges.map((badge) => {
-                      const { Icon, className } = getBadgeStyle(badge);
-                      return (
-                        <span key={badge} className={`inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-semibold rounded-md border ${className}`}>
-                          <Icon className="w-3 h-3 shrink-0" aria-hidden />
-                          {badge}
-                        </span>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
-              <h3 className="font-bold text-lg">{review.user}님의 여행 기록</h3>
-              <p className="text-gray-600 text-sm line-clamp-2 mt-2 leading-relaxed">{review.comment}</p>
+              <p className="text-[#45a494] text-xs font-semibold mb-1">{post.author_nickname || '작성자'}</p>
+              <h3 className="font-bold text-lg text-gray-800">{post.title}</h3>
+              <p className="text-gray-600 text-sm line-clamp-2 mt-2 leading-relaxed">{post.content}</p>
             </div>
-          </div>
+          </button>
         ))
       ) : (
-        <div className="py-20 text-center text-gray-300 italic">검색 결과가 없습니다.</div>
+        <div className="py-20 text-center text-gray-300 italic">게시물이 없습니다.</div>
       )}
     </div>
   </div>
 );
+
+// 게시물 상세 (인스타 스타일: 이미지, 글, 좋아요, 댓글)
+const PostDetailView = ({ post, user, onClose, onLikeChange }) => {
+  const [likesCount, setLikesCount] = useState(post?.likes_count ?? 0);
+  const [isLiked, setIsLiked] = useState(false);
+  const [comments, setComments] = useState([]);
+  const [commentInput, setCommentInput] = useState('');
+  const [commentLoading, setCommentLoading] = useState(false);
+
+  useEffect(() => {
+    if (!post) return;
+    setLikesCount(post.likes_count ?? 0);
+    let cancelled = false;
+    db.postLikes.isLiked(post.id, user?.id).then((liked) => { if (!cancelled) setIsLiked(!!liked); }).catch(() => { if (!cancelled) setIsLiked(false); });
+    return () => { cancelled = true; };
+  }, [post?.id, user?.id]);
+
+  useEffect(() => {
+    if (!post) return;
+    let cancelled = false;
+    db.postComments.list(post.id).then((list) => { if (!cancelled) setComments(list); }).catch(() => { if (!cancelled) setComments([]); });
+    return () => { cancelled = true; };
+  }, [post?.id]);
+
+  const handleLike = async () => {
+    if (!user) return;
+    try {
+      if (isLiked) {
+        await db.postLikes.remove(post.id, user.id);
+        setLikesCount((c) => Math.max(0, c - 1));
+        setIsLiked(false);
+      } else {
+        await db.postLikes.add(post.id, user.id);
+        setLikesCount((c) => c + 1);
+        setIsLiked(true);
+      }
+      onLikeChange?.();
+    } catch {
+      // post_likes 테이블 없을 수 있음
+    }
+  };
+
+  const handleSubmitComment = async (e) => {
+    e.preventDefault();
+    if (!user || !commentInput.trim()) return;
+    setCommentLoading(true);
+    try {
+      await db.postComments.create(post.id, user.id, commentInput.trim());
+      setCommentInput('');
+      const list = await db.postComments.list(post.id);
+      setComments(list);
+      onLikeChange?.();
+    } catch {
+      // post_comments 테이블 없을 수 있음
+    }
+    setCommentLoading(false);
+  };
+
+  if (!post) return null;
+  return (
+    <div className="fixed inset-0 z-30 bg-white flex flex-col animate-[fade-in_0.3s_ease-out]">
+      <div className="flex items-center justify-between p-4 border-b border-gray-100 shrink-0">
+        <button type="button" onClick={onClose} className="p-2 text-gray-500"><X className="w-6 h-6" /></button>
+        <h2 className="text-sm font-black text-[#45a494]">게시물</h2>
+        <div className="w-10" />
+      </div>
+      <div className="flex-1 overflow-y-auto no-scrollbar pb-24">
+        <div className="flex items-center gap-3 p-4 border-b border-gray-50">
+          <div className="w-10 h-10 rounded-full bg-[#45a494]/10 flex items-center justify-center shrink-0">
+            {post.author_profile_image ? (
+              <img src={post.author_profile_image} alt="" className="w-full h-full rounded-full object-cover" />
+            ) : (
+              <User className="w-5 h-5 text-[#45a494]" />
+            )}
+          </div>
+          <div>
+            <p className="font-bold text-sm text-gray-800">{post.author_nickname || '작성자'}</p>
+            <p className="text-[10px] text-gray-400">{post.title}</p>
+          </div>
+        </div>
+        <div className="relative aspect-square max-h-[70vh] bg-gray-100">
+          <SafeImage src={post.image_url} alt={post.title} className="w-full h-full object-contain bg-gray-50" />
+        </div>
+        <div className="p-4 space-y-3">
+          <div className="flex items-center gap-4">
+            <button type="button" onClick={handleLike} className="flex items-center gap-1.5 text-gray-700">
+              <Heart className={`w-6 h-6 ${isLiked ? 'fill-red-500 text-red-500' : ''}`} />
+              <span className="text-sm font-bold">{likesCount}</span>
+            </button>
+            <span className="flex items-center gap-1.5 text-gray-500 text-sm">
+              <MessageSquare className="w-5 h-5" />
+              <span className="font-bold">{comments.length}</span> 댓글
+            </span>
+          </div>
+          {(post.tags || []).length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {(post.tags || []).map((tag) => (
+                <span key={tag} className="text-xs font-bold text-[#45a494]">#{tag}</span>
+              ))}
+            </div>
+          )}
+          <div>
+            <p className="font-bold text-sm text-gray-800">{post.author_nickname || '작성자'}</p>
+            <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{post.content}</p>
+          </div>
+        </div>
+        <div className="px-4 pb-4 border-t border-gray-100">
+          <p className="text-xs font-bold text-gray-400 mb-2">댓글</p>
+          <div className="space-y-3 max-h-48 overflow-y-auto no-scrollbar">
+            {comments.length === 0 ? (
+              <p className="text-sm text-gray-400 italic">아직 댓글이 없어요.</p>
+            ) : (
+              comments.map((c) => (
+                <div key={c.id} className="flex gap-2">
+                  <span className="font-bold text-xs text-gray-700 shrink-0">{c.author_nickname || '알 수 없음'}</span>
+                  <span className="text-sm text-gray-600 break-words">{c.content}</span>
+                </div>
+              ))
+            )}
+          </div>
+          {user && (
+            <form onSubmit={handleSubmitComment} className="flex gap-2 mt-3">
+              <input
+                type="text"
+                placeholder="댓글 입력..."
+                value={commentInput}
+                onChange={(e) => setCommentInput(e.target.value)}
+                className="flex-1 rounded-xl border border-gray-200 px-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#45a494]/20"
+                disabled={commentLoading}
+              />
+              <button type="submit" disabled={commentLoading || !commentInput.trim()} className="px-4 py-2 bg-[#45a494] text-white text-sm font-bold rounded-xl disabled:opacity-50">
+                게시
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const CreateReviewView = ({ onSave, onCancel }) => {
   const [location, setLocation] = useState("");
@@ -482,6 +612,160 @@ const CreateReviewView = ({ onSave, onCancel }) => {
     </div>
   );
 };
+
+// 게시물 작성: 제목, 본문, 이미지, 태그
+const CreatePostView = ({ onSave, onCancel }) => {
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
+  const [image, setImage] = useState("");
+  const [tags, setTags] = useState([]);
+  const [tagInput, setTagInput] = useState("");
+  const fileInputRef = useRef(null);
+
+  const handleImageChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => setImage(reader.result);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const addTag = (value) => {
+    const trimmed = (value || tagInput).trim().replace(/^#/, '');
+    if (!trimmed || tags.includes(trimmed)) return;
+    setTags((prev) => [...prev, trimmed]);
+    setTagInput("");
+  };
+
+  const removeTag = (tag) => setTags((prev) => prev.filter((t) => t !== tag));
+
+  const handleTagKeyDown = (e) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      addTag();
+    }
+  };
+
+  return (
+    <div className="flex flex-col h-full animate-[fade-in_0.4s_ease-out] bg-white">
+      <div className="p-6 border-b flex items-center justify-between sticky top-0 bg-white z-10">
+        <button onClick={onCancel} className="text-gray-400 p-2"><X /></button>
+        <h2 className="text-lg font-black text-[#45a494]">새 게시물 작성</h2>
+        <button
+          onClick={() => onSave({ title, content, image, tags })}
+          className="text-[#45a494] font-bold px-4 py-2 active:scale-95 transition-transform"
+          disabled={!title.trim() || !content.trim()}
+        >
+          등록
+        </button>
+      </div>
+
+      <div className="p-6 space-y-6 overflow-y-auto no-scrollbar pb-32">
+        <div className="relative">
+          <FileText className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
+          <input
+            type="text"
+            placeholder="제목"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-4 pl-12 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-[#45a494]/20"
+          />
+        </div>
+
+        <textarea
+          placeholder="내용을 입력해주세요."
+          rows={8}
+          value={content}
+          onChange={(e) => setContent(e.target.value)}
+          className="w-full bg-gray-50 border border-gray-100 rounded-3xl p-5 text-sm focus:outline-none focus:ring-2 focus:ring-[#45a494]/20 resize-none"
+        />
+
+        <div
+          onClick={() => fileInputRef.current?.click()}
+          className="w-full aspect-video bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center cursor-pointer overflow-hidden relative"
+        >
+          {image ? (
+            <img src={image} className="w-full h-full object-cover" alt="Selected" />
+          ) : (
+            <>
+              <ImageIcon className="text-gray-300 mb-2" size={40} />
+              <p className="text-xs text-gray-400 font-bold">이미지 추가 (선택)</p>
+            </>
+          )}
+          <input type="file" ref={fileInputRef} onChange={handleImageChange} className="hidden" accept="image/*" />
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-sm font-bold text-gray-600">
+            <Tag className="w-4 h-4 text-[#45a494]" />
+            <span>태그</span>
+            <span className="text-[10px] font-normal text-gray-400">(엔터 또는 쉼표로 추가, 홈 상단에 노출됩니다)</span>
+          </div>
+          <div className="flex flex-wrap gap-2 p-3 bg-gray-50 rounded-2xl border border-gray-100 min-h-[52px]">
+            {tags.map((tag) => (
+              <span
+                key={tag}
+                className="inline-flex items-center gap-1 px-3 py-1.5 bg-[#45a494]/10 text-[#45a494] rounded-full text-xs font-bold border border-[#45a494]/20"
+              >
+                #{tag}
+                <button type="button" onClick={() => removeTag(tag)} className="p-0.5 hover:bg-[#45a494]/20 rounded-full" aria-label="태그 제거"><X className="w-3 h-3" /></button>
+              </span>
+            ))}
+            <input
+              type="text"
+              placeholder="태그 입력 후 Enter"
+              value={tagInput}
+              onChange={(e) => setTagInput(e.target.value)}
+              onKeyDown={handleTagKeyDown}
+              onBlur={() => addTag()}
+              className="flex-1 min-w-[120px] bg-transparent border-none outline-none text-sm placeholder:text-gray-400"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// 작성 타입 선택: 리뷰 / 게시물
+const WriteChoiceView = ({ onSelectReview, onSelectPost, onCancel }) => (
+  <div className="flex flex-col h-full animate-[fade-in_0.4s_ease-out] bg-white p-6">
+    <div className="flex items-center justify-between mb-8">
+      <button onClick={onCancel} className="text-gray-400 p-2"><X /></button>
+      <h2 className="text-lg font-black text-[#45a494]">작성하기</h2>
+      <div className="w-10" />
+    </div>
+    <div className="flex flex-col gap-4 flex-1">
+      <button
+        type="button"
+        onClick={onSelectReview}
+        className="w-full p-6 rounded-2xl border-2 border-gray-100 hover:border-[#45a494]/30 hover:bg-[#45a494]/5 flex items-center gap-4 text-left transition-all"
+      >
+        <div className="w-12 h-12 rounded-xl bg-[#45a494]/10 flex items-center justify-center shrink-0">
+          <MapPin className="w-6 h-6 text-[#45a494]" />
+        </div>
+        <div>
+          <p className="font-black text-gray-800">리뷰 작성</p>
+          <p className="text-xs text-gray-500 mt-0.5">장소 리뷰와 사진을 공유해요</p>
+        </div>
+      </button>
+      <button
+        type="button"
+        onClick={onSelectPost}
+        className="w-full p-6 rounded-2xl border-2 border-gray-100 hover:border-[#45a494]/30 hover:bg-[#45a494]/5 flex items-center gap-4 text-left transition-all"
+      >
+        <div className="w-12 h-12 rounded-xl bg-[#45a494]/10 flex items-center justify-center shrink-0">
+          <FileText className="w-6 h-6 text-[#45a494]" />
+        </div>
+        <div>
+          <p className="font-black text-gray-800">게시물 작성</p>
+          <p className="text-xs text-gray-500 mt-0.5">제목과 태그로 글을 올려요 (태그는 홈 상단에 노출)</p>
+        </div>
+      </button>
+    </div>
+  </div>
+);
 
 const AuthView = ({ isSignUpMode, setIsSignUpMode, email, setEmail, password, setPassword, nickname, setNickname, authLoading, authMessage, handleAuth }) => (
   <div className="p-8 flex flex-col h-full animate-[fade-in_0.4s_ease-out]">
@@ -658,6 +942,17 @@ function getMarkerSizeByLevel(level) {
   return { width, height, offsetX, offsetY };
 }
 
+// 줌 레벨·색상에 맞는 Kakao MarkerImage 생성 유틸 (전역 정의로 줌 이벤트/콜백에서도 안전하게 참조)
+function createMarkerImageForLevel(kakao, level, hexColor, isSelected = false) {
+  const s = getMarkerSizeByLevel(level);
+  const url = createPinDataUrl(hexColor || DEFAULT_PIN_COLOR, s.width, s.height, isSelected);
+  return new kakao.maps.MarkerImage(
+    url,
+    new kakao.maps.Size(s.width, s.height),
+    { offset: new kakao.maps.Point(s.offsetX, s.offsetY) }
+  );
+}
+
 // Kakao Maps + 무장애여행 CSV 연동 지도 뷰 (맵 탭용)
 function MapViewKakao() {
   const mapRef = useRef(null);
@@ -796,16 +1091,11 @@ function MapViewKakao() {
     setSelectedPlaceId(null);
     if (currentInfoCardRef.current) { currentInfoCardRef.current.setMap(null); currentInfoCardRef.current = null; }
     const imageBaseUrl = region.imageBaseUrl || '';
-    const createMarkerImageForLevel = (level, hexColor, isSelected = false) => {
-      const s = getMarkerSizeByLevel(level);
-      const url = createPinDataUrl(hexColor || DEFAULT_PIN_COLOR, s.width, s.height, isSelected);
-      return new kakao.maps.MarkerImage(url, new kakao.maps.Size(s.width, s.height), { offset: new kakao.maps.Point(s.offsetX, s.offsetY) });
-    };
     const createMarkerWithLabel = (position, placeInfo, placeId) => {
       const primaryBadge = getPrimaryBadge(placeInfo);
       const pinColor = getPinColorForBadge(primaryBadge);
       const markerOption = { position };
-      markerOption.image = createMarkerImageForLevel(map.getLevel(), pinColor);
+      markerOption.image = createMarkerImageForLevel(kakao, map.getLevel(), pinColor);
       const marker = new kakao.maps.Marker(markerOption);
       marker.setMap(map.getLevel() <= PIN_VISIBLE_MAX_LEVEL ? map : null);
       const overlayContent = '<div style="padding:5px 10px;background:#fff;border:1px solid #ddd;border-radius:4px;font-size:12px;white-space:nowrap;margin-top:8px;">' + placeInfo.name + '</div>';
@@ -846,7 +1136,7 @@ function MapViewKakao() {
           prevMarker.setZIndex(0);
           if (prevItem) {
             const baseColorPrev = getPinColorForBadge(prevItem.primaryBadge);
-            prevMarker.setImage(createMarkerImageForLevel(map.getLevel(), baseColorPrev, false));
+            prevMarker.setImage(createMarkerImageForLevel(kakao, map.getLevel(), baseColorPrev, false));
             prevItem.isSelected = false;
           }
         }
@@ -854,7 +1144,7 @@ function MapViewKakao() {
         // 현재 선택 핀 강조 (테두리 있는 아이콘 + zIndex)
         marker.setZIndex(10);
         const baseColor = getPinColorForBadge(primaryBadge);
-        marker.setImage(createMarkerImageForLevel(map.getLevel(), baseColor, true));
+        marker.setImage(createMarkerImageForLevel(kakao, map.getLevel(), baseColor, true));
         selectedMarkerRef.current = marker;
         const thisItem = allMarkersRef.current.find((it) => it.marker === marker);
         if (thisItem) thisItem.isSelected = true;
@@ -926,7 +1216,7 @@ function MapViewKakao() {
           const showPins = level <= PIN_VISIBLE_MAX_LEVEL;
           allMarkersRef.current.forEach((item) => {
             const color = getPinColorForBadge(item.primaryBadge);
-            item.marker.setImage(createMarkerImageForLevel(level, color, !!item.isSelected));
+            item.marker.setImage(createMarkerImageForLevel(kakao, level, color, !!item.isSelected));
             item.marker.setMap(showPins ? map : null);
             // 라벨은 기본 상태에서는 숨기고, 호버 이벤트에서만 제어
             if (!showPins) {
@@ -1368,12 +1658,14 @@ function SimpleApp() {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('home');
+  const [writeMode, setWriteMode] = useState('choice'); // 'choice' | 'review' | 'post'
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTag, setSelectedTag] = useState("전체");
   const [reviews, setReviews] = useState(REVIEWS);
-  const { getBadgesForRegion } = useRegionBadges();
+  const [posts, setPosts] = useState([]);
+  const [selectedPost, setSelectedPost] = useState(null);
   const [favorites, setFavorites] = useState(() => {
     const saved = localStorage.getItem('gochigage-favorites');
     return saved ? JSON.parse(saved) : [];
@@ -1386,23 +1678,111 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(false);
   const [authMessage, setAuthMessage] = useState({ type: "", text: "" });
 
-  useEffect(() => {
-    const checkSession = async () => {
-      const { data } = await MockAuth.getSession();
-      if (data.session) setUser(data.session);
-      setLoading(false);
+  // Supabase 리뷰 → UI용 리뷰 객체로 변환
+  const mapDbReviewToUi = (review) => {
+    if (!review) return null;
+    const regionMatch = MAP_REGIONS.find(
+      (r) => String(r.dbRegion) === String(review.place_region)
+    );
+
+    return {
+      id: review.id,
+      userId: review.member_id,
+      member_id: review.member_id,
+      user: review.author_nickname || '여행자',
+      location: review.location || review.place_name || '이름 없는 장소',
+      category: '명소',
+      rating: review.rating ?? 0,
+      comment: review.comment,
+      image: review.image_url,
+      likes: review.likes_count ?? 0,
+      replies: review.replies_count ?? 0,
+      tags: review.tags || [],
+      isLiked: false,
+      coords: null,
+      details: '',
+      regionKey: regionMatch ? regionMatch.value : undefined,
     };
-    checkSession();
+  };
+
+  useEffect(() => {
+    const checkSessionAndLoad = async () => {
+      try {
+        const { data } = await MockAuth.getSession();
+        if (data?.session) {
+          setUser(data.session);
+        }
+      } catch (err) {
+        // 오프라인/토큰 갱신 실패 시 로그인 없이 진행
+        console.warn('Session check failed (e.g. offline):', err?.message || err);
+      }
+      try {
+        const { reviews: dbReviews } = await db.reviews.search({ limit: 50 });
+        const uiReviews = (dbReviews || []).map(mapDbReviewToUi).filter(Boolean);
+        if (uiReviews.length > 0) {
+          setReviews(uiReviews);
+        }
+      } catch (err) {
+        console.error('Failed to load reviews from Supabase:', err);
+      }
+      try {
+        const { posts: dbPosts } = await db.posts.search({ limit: 50 });
+        if (Array.isArray(dbPosts) && dbPosts.length > 0) {
+          setPosts(dbPosts);
+        }
+      } catch (err) {
+        console.error('Failed to load posts from Supabase:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    checkSessionAndLoad();
   }, []);
+
+  // 로그인한 사용자의 찜 목록 초기화
+  useEffect(() => {
+    if (!user) return;
+    (async () => {
+      try {
+        const ids = await db.wishlists.getWishlistIds(user.id, 'REVIEW');
+        setFavorites(ids.map((id) => Number(id)));
+      } catch (err) {
+        console.error('Failed to load wishlist from Supabase:', err);
+      }
+    })();
+  }, [user]);
 
   useEffect(() => {
     localStorage.setItem('gochigage-favorites', JSON.stringify(favorites));
-    localStorage.setItem('gochigage-reviews', JSON.stringify(reviews));
-  }, [favorites, reviews]);
+  }, [favorites]);
 
-  const toggleFavorite = (id, e) => {
+  const toggleFavorite = async (id, e) => {
     if (e) e.stopPropagation();
-    setFavorites(prev => prev.includes(id) ? prev.filter(favId => favId !== id) : [...prev, id]);
+
+    // 로그인하지 않은 경우 마이페이지로 유도
+    if (!user) {
+      setActiveTab('profile');
+      return;
+    }
+
+    try {
+      if (favorites.includes(id)) {
+        await db.wishlists.remove(user.id, 'REVIEW', id);
+        setFavorites((prev) => prev.filter((favId) => favId !== id));
+      } else {
+        try {
+          await db.wishlists.add(user.id, 'REVIEW', id);
+        } catch (err) {
+          // 이미 찜된 상태라면 무시
+          if (err?.message !== 'ALREADY_WISHLISTED') {
+            throw err;
+          }
+        }
+        setFavorites((prev) => (prev.includes(id) ? prev : [...prev, id]));
+      }
+    } catch (err) {
+      console.error('Failed to toggle wishlist:', err);
+    }
   };
 
   const handleAuth = async (e) => {
@@ -1429,21 +1809,70 @@ export default function App() {
     if (!error) setUser({ ...user, ...updates });
   };
 
-  const saveNewReview = (reviewData) => {
-    if (!user) { setActiveTab('profile'); return; }
-    const newReview = {
-      id: Date.now(), userId: user.id, user: user.nickname, rating: 5.0,
-      likes: 0, replies: 0, tags: ["신규리뷰"], ...reviewData
-    };
-    setReviews([newReview, ...reviews]);
-    setActiveTab('home');
+  const saveNewReview = async (reviewData) => {
+    if (!user) {
+      setActiveTab('profile');
+      return;
+    }
+    try {
+      const created = await db.reviews.create({
+        memberId: user.id,
+        placeId: null,
+        location: reviewData.location,
+        rating: 5.0,
+        comment: reviewData.comment,
+        imageUrl: reviewData.image || null,
+        tags: ['신규리뷰'],
+      });
+      const uiReview = mapDbReviewToUi(created);
+      setReviews((prev) => (uiReview ? [uiReview, ...prev] : prev));
+      setActiveTab('home');
+      setWriteMode('choice');
+    } catch (err) {
+      console.error('Failed to create review:', err);
+    }
   };
 
-  const tags = ['전체', ...new Set(reviews.flatMap((r) => r.tags || []))];
+  const saveNewPost = async (postData) => {
+    if (!user) {
+      setActiveTab('profile');
+      return;
+    }
+    try {
+      const created = await db.posts.create({
+        memberId: user.id,
+        category: 'GENERAL',
+        title: postData.title.trim(),
+        content: postData.content.trim(),
+        imageUrl: postData.image || null,
+        tags: Array.isArray(postData.tags) ? postData.tags.filter(Boolean) : [],
+      });
+      setPosts((prev) => (created ? [created, ...prev] : prev));
+      setActiveTab('home');
+      setWriteMode('choice');
+    } catch (err) {
+      console.error('Failed to create post:', err);
+    }
+  };
+
+  // 홈: posts 기준 태그 및 필터 (카드 클릭 시 posts 상세 = 인스타 스타일)
+  // 홈 상단 태그: posts의 post_tags 데이터 (CRUD 반영)
+  const tags = ['전체', ...new Set(posts.flatMap((p) => p.tags || []))].filter(Boolean);
+  const filteredPosts = posts
+    .filter((p) => selectedTag === '전체' || (p.tags || []).includes(selectedTag))
+    .filter((p) => {
+      const q = searchQuery.toLowerCase();
+      return !q || (p.title || '').toLowerCase().includes(q) || (p.content || '').toLowerCase().includes(q) || (p.tags || []).some((t) => t.toLowerCase().includes(q));
+    });
   const filteredReviews = reviews
     .filter((r) => selectedTag === '전체' || (r.tags || []).includes(selectedTag))
     .filter((r) => r.location.toLowerCase().includes(searchQuery.toLowerCase()) || r.user.toLowerCase().includes(searchQuery.toLowerCase()));
-  const myReviews = reviews.filter(r => r.userId === user?.id || (r.userId === "admin" && user?.email === "admin@test.com"));
+  const myReviews = reviews.filter(
+    (r) =>
+      r.member_id === user?.id ||
+      r.userId === user?.id ||
+      (r.userId === 'admin' && user?.email === 'admin@test.com')
+  );
 
   // 지도 뷰 (팀원 로직 보존) - 상단에서 정의한 MAP_REGIONS와 동일한 데이터 사용
   const MapView = () => {
@@ -1528,17 +1957,32 @@ export default function App() {
         
         <main className="flex-1 overflow-y-auto no-scrollbar bg-white pb-20">
           {activeTab === 'home' && (
-            <HomeView 
-              searchQuery={searchQuery}
-              setSearchQuery={setSearchQuery}
-              selectedTag={selectedTag}
-              setSelectedTag={setSelectedTag}
-              tags={tags}
-              filteredReviews={filteredReviews}
-              favorites={favorites}
-              toggleFavorite={toggleFavorite}
-              getBadgesForRegion={getBadgesForRegion}
-            />
+            <>
+              <HomeView 
+                searchQuery={searchQuery}
+                setSearchQuery={setSearchQuery}
+                selectedTag={selectedTag}
+                setSelectedTag={setSelectedTag}
+                tags={tags}
+                filteredPosts={filteredPosts}
+                onPostClick={(post) => setSelectedPost(post)}
+              />
+              {selectedPost && (
+                <PostDetailView
+                  post={selectedPost}
+                  user={user}
+                  onClose={() => setSelectedPost(null)}
+                  onLikeChange={() => {
+                    db.posts.findById(selectedPost.id).then((p) => {
+                      if (p) {
+                        setSelectedPost(p);
+                        setPosts((prev) => prev.map((x) => (x.id === p.id ? p : x)));
+                      }
+                    }).catch(() => {});
+                  }}
+                />
+              )}
+            </>
           )}
           
           {activeTab === 'profile' && (
@@ -1549,16 +1993,56 @@ export default function App() {
                 favoritesCount={favorites.length} 
                 onUpdateProfile={updateProfile} 
                 myReviews={myReviews} 
-                onDeleteReview={(id) => setReviews(r => r.filter(x => x.id !== id))} 
-                onUpdateReview={(id, upd) => setReviews(r => r.map(x => x.id === id ? {...x, ...upd} : x))}
-                setActiveTab={setActiveTab} // setActiveTab 함수 전달
+                onDeleteReview={async (id) => {
+                  if (!user) return;
+                  try {
+                    await db.reviews.delete(id, user.id);
+                    setReviews((r) => r.filter((x) => x.id !== id));
+                  } catch (err) {
+                    console.error('Failed to delete review:', err);
+                  }
+                }} 
+                onUpdateReview={async (id, upd) => {
+                  if (!user) return;
+                  try {
+                    const updated = await db.reviews.update(id, user.id, {
+                      comment: upd.comment,
+                      location: upd.location,
+                      rating: upd.rating,
+                      imageUrl: upd.image,
+                    });
+                    const uiReview = mapDbReviewToUi(updated);
+                    setReviews((r) => r.map((x) => (x.id === id ? uiReview || x : x)));
+                  } catch (err) {
+                    console.error('Failed to update review:', err);
+                  }
+                }}
+                setActiveTab={setActiveTab}
               />
             ) : (
               <AuthView isSignUpMode={isSignUpMode} setIsSignUpMode={setIsSignUpMode} email={email} setEmail={setEmail} password={password} setPassword={setPassword} nickname={nickname} setNickname={setNickname} authLoading={authLoading} authMessage={authMessage} handleAuth={handleAuth} />
             )
           )}
           
-          {activeTab === 'write' && <CreateReviewView onSave={saveNewReview} onCancel={() => setActiveTab('home')} />}
+          {activeTab === 'write' && (
+            writeMode === 'choice' ? (
+              <WriteChoiceView
+                onSelectReview={() => setWriteMode('review')}
+                onSelectPost={() => setWriteMode('post')}
+                onCancel={() => setActiveTab('home')}
+              />
+            ) : writeMode === 'review' ? (
+              <CreateReviewView
+                onSave={saveNewReview}
+                onCancel={() => setWriteMode('choice')}
+              />
+            ) : (
+              <CreatePostView
+                onSave={saveNewPost}
+                onCancel={() => setWriteMode('choice')}
+              />
+            )
+          )}
           
           {activeTab === 'favorites' && (
             <div className="animate-[fade-in_0.4s_ease-out]">
@@ -1581,7 +2065,7 @@ export default function App() {
           <button onClick={() => setActiveTab('map')} className={`flex flex-col items-center gap-1 transition-all ${activeTab === 'map' ? 'text-[#45a494] scale-110 font-bold' : 'text-gray-400'}`}><MapIcon className="w-6 h-6" /><span className="text-[10px]">탐색</span></button>
           <div className="relative -top-5">
             <button 
-              onClick={() => setActiveTab('write')}
+              onClick={() => { setActiveTab('write'); setWriteMode('choice'); }}
               className="w-14 h-14 bg-gradient-to-tr from-[#45a494] to-[#68c9b9] rounded-full shadow-lg text-white flex items-center justify-center transform active:scale-95 transition-transform"
             >
               <span className="text-3xl font-light">+</span>
