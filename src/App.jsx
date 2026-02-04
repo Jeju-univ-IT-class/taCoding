@@ -506,6 +506,19 @@ const ProfileView = ({ user, handleLogout, favoritesCount, onUpdateProfile, myRe
   const [editComment, setEditComment] = useState("");
   const fileInputRef = useRef(null);
 
+  const handleAvatarClick = () => {
+    if (!fileInputRef.current) return;
+    // 편집 모드가 아니면 편집 모드로 전환 후 파일 선택창 오픈
+    if (!isEditing) {
+      setIsEditing(true);
+      setNewNickname(user?.nickname || "");
+      setTempProfileImage(user?.profileImage || "");
+      setTimeout(() => fileInputRef.current?.click(), 0);
+    } else {
+      fileInputRef.current.click();
+    }
+  };
+
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -564,7 +577,7 @@ const ProfileView = ({ user, handleLogout, favoritesCount, onUpdateProfile, myRe
         <button onClick={handleLogout} className="p-2 text-gray-400 hover:text-red-500 transition-colors"><LogOut size={20} /></button>
       </div>
       <div className="flex flex-col items-center">
-        <div className="relative" onClick={() => isEditing && fileInputRef.current?.click()}>
+        <div className="relative" onClick={handleAvatarClick}>
           <div className={`w-24 h-24 bg-slate-100 rounded-full flex items-center justify-center mb-4 border-4 border-white shadow-xl overflow-hidden ${isEditing ? 'cursor-pointer' : ''}`}>
             {tempProfileImage ? <img src={tempProfileImage} alt="Profile" className="w-full h-full object-cover" /> : <User size={48} className="text-gray-300" />}
           </div>
@@ -598,10 +611,10 @@ const ProfileView = ({ user, handleLogout, favoritesCount, onUpdateProfile, myRe
         >
           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">찜한 목록</p>
           <p className="text-2xl font-black text-[#45a494]">{favoritesCount}</p>
-        </div>
+        </button>
         <div className="bg-gray-50 p-5 rounded-3xl border border-gray-100 text-center">
           <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">작성 리뷰</p>
-          <p className="text-2xl font-black text-slate-600">{reviewCount}</p>
+          <p className="text-2xl font-black text-slate-600">{myReviews.length}</p>
         </div>
       </div>
 
