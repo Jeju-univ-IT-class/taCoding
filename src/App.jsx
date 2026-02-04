@@ -16,7 +16,8 @@ const MockAuth = {
       email, 
       password, 
       nickname: nickname || email.split('@')[0],
-      profileImage: "" 
+      profileImage: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200",
+      bio: "제주 무장애 여행을 사랑합니다."
     };
     localStorage.setItem('mock_users', JSON.stringify([...users, newUser]));
     return { data: { user: newUser }, error: null };
@@ -25,10 +26,7 @@ const MockAuth = {
     await new Promise(res => setTimeout(res, 800));
     const users = JSON.parse(localStorage.getItem('mock_users') || '[]');
     const user = users.find(u => u.email === email && u.password === password);
-    if (!user) {
-      return { error: { message: "이메일 또는 비밀번호가 일치하지 않습니다." } };
-    }
-    localStorage.setItem('mock_session', JSON.stringify(user));
+    if (!user) return { error: { message: "이메일 또는 비밀번호가 일치하지 않습니다." } };
     return { data: { user }, error: null };
   },
   async updateProfile(userId, updates) {
@@ -36,20 +34,7 @@ const MockAuth = {
     const users = JSON.parse(localStorage.getItem('mock_users') || '[]');
     const updatedUsers = users.map(u => u.id === userId ? { ...u, ...updates } : u);
     localStorage.setItem('mock_users', JSON.stringify(updatedUsers));
-    
-    const session = JSON.parse(localStorage.getItem('mock_session'));
-    if (session && session.id === userId) {
-      localStorage.setItem('mock_session', JSON.stringify({ ...session, ...updates }));
-    }
-    return { error: null };
-  },
-  async signOut() {
-    localStorage.removeItem('mock_session');
-    return { error: null };
-  },
-  async getSession() {
-    const session = localStorage.getItem('mock_session');
-    return { data: { session: session ? JSON.parse(session) : null } };
+    return { data: updates, error: null };
   }
 };
 
