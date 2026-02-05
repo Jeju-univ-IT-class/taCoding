@@ -113,6 +113,43 @@ const INITIAL_REVIEWS = [
 
 const REVIEWS = INITIAL_REVIEWS;
 
+// 홈 탭 더미 카드 (과거 커밋 스타일 리뷰 카드, 태그 필터·찜 연동용 숫자 id)
+const DUMMY_HOME_CARDS = [
+  {
+    id: -1,
+    user: '제주나그네',
+    location: '서귀포 성산일출봉',
+    rating: 4.9,
+    comment: '새벽 공기를 가르며 올라간 보람이 있네요. 성산일출봉 정상에서 바라보는 일출은 평생 잊지 못할 장관입니다.',
+    image: 'https://images.unsplash.com/photo-1549693578-d683be217e58?q=80&w=1000&auto=format&fit=crop',
+    likes: 342,
+    replies: 45,
+    tags: ['바다뷰', '일출맛집'],
+  },
+  {
+    id: -2,
+    user: '바다아이',
+    location: '제주시 협재 해수욕장',
+    rating: 4.7,
+    comment: '비양도가 손에 잡힐 듯 보이는 에메랄드빛 바다는 언제 봐도 감동적이에요. 주변에 예쁜 카페들이 많아 좋습니다.',
+    image: 'https://images.unsplash.com/photo-1515238152791-8216bfdf89a7?q=80&w=1000&auto=format&fit=crop',
+    likes: 215,
+    replies: 12,
+    tags: ['바다뷰', '주차가능', '반려동물동반'],
+  },
+  {
+    id: -3,
+    user: '고기러버',
+    location: '칠돈가',
+    rating: 4.8,
+    comment: '제주도 하면 흑돼지, 흑돼지 하면 칠돈가죠! 육즙이 살아있고 직원분들이 직접 구워주셔서 정말 편해요.',
+    image: 'https://images.unsplash.com/photo-1544025162-d76694265947?q=80&w=1000&auto=format&fit=crop',
+    likes: 189,
+    replies: 28,
+    tags: ['주차가능'],
+  },
+];
+
 // 협재 해수욕장 무장애 데이터 경로 (영문 경로 사용 — 한글 경로 시 SPA/서버에서 CSV 대신 HTML이 올 수 있음)
 const HYOPJAE_CSV = '/hyopjae/010-2.csv';
 const HYOPJAE_IMAGES = '/hyopjae/images/';
@@ -208,7 +245,7 @@ const BADGE_LEGEND_GROUPS = [
 ];
 
 // 뱃지 색상의 핀 모양 SVG를 data URL로 생성 (원+삼각형 핀)
-// isSelected 가 true이면 대비되는 흰색 외곽선을 추가해 강조
+// isSelected 가 true이면 핀 위 원의 색을 강조색으로 변경 (테두리 대신)
 function createPinDataUrl(hexColor, width, height, isSelected = false) {
   const w = width || 48;
   const h = height || 52;
@@ -216,12 +253,13 @@ function createPinDataUrl(hexColor, width, height, isSelected = false) {
   const cx = w / 2;
   const cy = r + 3;
   const tipY = h - 2;
+  const circleFill = isSelected ? hexColor : 'white';
+  const circleOpacity = isSelected ? '1' : '0.9';
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
   <defs><filter id="sd" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="1" stdDeviation="1" flood-opacity="0.3"/></filter></defs>
   <path d="M ${cx} ${tipY} L ${cx - r * 0.95} ${cy + r * 0.3} A ${r} ${r} 0 0 0 ${cx + r * 0.95} ${cy + r * 0.3} Z"
-        fill="${hexColor}" ${isSelected ? 'stroke="white" stroke-width="3"' : ''} filter="url(#sd)"/>
-  <circle cx="${cx}" cy="${cy - r * 0.15}" r="${r * 0.4}" fill="white" opacity="0.9"
-          ${isSelected ? 'stroke="white" stroke-width="2"' : ''}/>
+        fill="${hexColor}" filter="url(#sd)"/>
+  <circle cx="${cx}" cy="${cy - r * 0.15}" r="${r * 0.4}" fill="${circleFill}" opacity="${circleOpacity}"/>
 </svg>`;
   return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
 }
@@ -339,78 +377,140 @@ const SafeImage = ({ src, alt, className }) => {
 
 // --- 서브 뷰 컴포넌트 ---
 
-// 홈: posts 카드 (클릭 시 인스타 스타일 상세)
-const HomeView = ({ searchQuery, setSearchQuery, selectedTag, setSelectedTag, tags, filteredPosts, onPostClick }) => (
-  <div className="pb-24 animate-[fade-in_0.4s_ease-out]">
-    <header className="sticky top-0 bg-white z-20 px-4 pt-8 pb-3 shadow-sm border-b border-gray-50 flex items-center gap-3">
-      <div className="flex items-center gap-2 shrink-0">
-        <div className="w-10 h-10 rounded-xl overflow-hidden bg-white shrink-0">
-          <img src="/favicon.png" alt="Logo" className="w-full h-full object-cover" />
+// 홈: 더미 카드 + posts 카드 (클릭 시 인스타 스타일 상세)
+const HomeView = ({ searchQuery, setSearchQuery, selectedTag, setSelectedTag, tags, filteredPosts, onPostClick, dummyCards = [], favorites = [], toggleFavorite }) => {
+  const filteredDummyCards = dummyCards.filter(
+    (c) => selectedTag === '전체' || (c.tags || []).includes(selectedTag)
+  );
+  return (
+    <div className="pb-24 animate-[fade-in_0.4s_ease-out]">
+      <header className="sticky top-0 bg-white z-20 px-4 pt-8 pb-3 shadow-sm border-b border-gray-50 flex items-center gap-3">
+        <div className="flex items-center gap-2 shrink-0">
+          <div className="w-10 h-10 rounded-xl overflow-hidden bg-white shrink-0">
+            <img src="/favicon.png" alt="Logo" className="w-full h-full object-cover" />
+          </div>
+          <div className="flex flex-col">
+            <h1 className="text-sm font-black text-[#45a494] tracking-tight leading-none">고치가게</h1>
+            <p className="text-[7px] font-bold text-gray-400 uppercase tracking-widest mt-0.5 whitespace-nowrap">Jeju Wheel-Trip</p>
+          </div>
         </div>
-        <div className="flex flex-col">
-          <h1 className="text-sm font-black text-[#45a494] tracking-tight leading-none">고치가게</h1>
-          <p className="text-[7px] font-bold text-gray-400 uppercase tracking-widest mt-0.5 whitespace-nowrap">Jeju Wheel-Trip</p>
+        <div className="flex-1 relative">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-3.5 h-3.5" />
+          <input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            type="text"
+            placeholder="제목, 내용, 태그 검색"
+            className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-2 pl-9 pr-3 focus:outline-none focus:ring-2 focus:ring-[#45a494]/20 text-xs transition-all shadow-sm"
+          />
         </div>
-      </div>
-      <div className="flex-1 relative">
-        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-3.5 h-3.5" />
-        <input
-          value={searchQuery}
-          onChange={(e) => setSearchQuery(e.target.value)}
-          type="text"
-          placeholder="제목, 내용, 태그 검색"
-          className="w-full bg-gray-50 border border-gray-100 rounded-2xl py-2 pl-9 pr-3 focus:outline-none focus:ring-2 focus:ring-[#45a494]/20 text-xs transition-all shadow-sm"
-        />
-      </div>
-    </header>
+      </header>
 
-    <div className="flex gap-2 overflow-x-auto no-scrollbar px-4 py-4 shrink-0 bg-white">
-      {tags.map((tag) => (
-        <button
-          key={tag}
-          onClick={() => setSelectedTag(tag)}
-          className={`px-4 py-1.5 rounded-full text-sm font-bold whitespace-nowrap transition-all
-            ${selectedTag === tag ? 'bg-[#45a494] text-white shadow-lg shadow-[#45a494]/20 scale-105' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
-        >
-          {tag === '전체' ? tag : `#${tag}`}
-        </button>
-      ))}
-    </div>
-
-    <div className="p-4 space-y-6">
-      {filteredPosts.length > 0 ? (
-        filteredPosts.map((post) => (
+      <div className="flex gap-2 overflow-x-auto no-scrollbar px-4 py-4 shrink-0 bg-white">
+        {tags.map((tag) => (
           <button
-            key={post.id}
-            type="button"
-            onClick={() => onPostClick(post)}
-            className="w-full text-left bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 hover:shadow-md transition-shadow"
+            key={tag}
+            onClick={() => setSelectedTag(tag)}
+            className={`px-4 py-1.5 rounded-full text-sm font-bold whitespace-nowrap transition-all
+              ${selectedTag === tag ? 'bg-[#45a494] text-white shadow-lg shadow-[#45a494]/20 scale-105' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
           >
-            <div className="relative h-64">
-              <SafeImage src={post.image_url} alt={post.title} className="w-full h-full object-cover" />
-              <div className="absolute top-4 left-4 flex gap-2 flex-wrap">
-                {(post.tags || []).map((tag) => (
-                  <span key={tag} className="px-3 py-1 bg-black/40 backdrop-blur-md text-white text-[10px] font-bold rounded-full">#{tag}</span>
-                ))}
-              </div>
-              <div className="absolute bottom-4 left-4 right-4 flex items-center gap-3 text-white text-xs font-bold">
-                <span className="flex items-center gap-1"><Heart className="w-4 h-4" /> {post.likes_count ?? 0}</span>
-                <span className="flex items-center gap-1"><MessageSquare className="w-4 h-4" /> {post.comments_count ?? 0}</span>
-              </div>
-            </div>
-            <div className="p-4">
-              <p className="text-[#45a494] text-xs font-semibold mb-1">{post.author_nickname || '작성자'}</p>
-              <h3 className="font-bold text-lg text-gray-800">{post.title}</h3>
-              <p className="text-gray-600 text-sm line-clamp-2 mt-2 leading-relaxed">{post.content}</p>
-            </div>
+            {tag === '전체' ? tag : `#${tag}`}
           </button>
-        ))
-      ) : (
-        <div className="py-20 text-center text-gray-300 italic">게시물이 없습니다.</div>
-      )}
+        ))}
+      </div>
+
+      <div className="p-4 space-y-6">
+        {filteredDummyCards.map((review) => (
+          <div key={review.id} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100">
+            {review.image && (
+              <div className="relative h-48">
+                <SafeImage src={review.image} alt={review.location} className="w-full h-full object-cover" />
+                <div className="absolute top-4 left-4 flex gap-2 flex-wrap">
+                  {(review.tags || []).map((tag) => (
+                    <span key={tag} className="px-3 py-1 bg-black/40 backdrop-blur-md text-white text-[10px] font-bold rounded-full">#{tag}</span>
+                  ))}
+                </div>
+                {toggleFavorite && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); toggleFavorite(review.id, e); }}
+                    className="absolute top-4 right-4 p-2 rounded-full bg-white/80 backdrop-blur-sm hover:bg-white transition-colors"
+                    aria-label={favorites.includes(review.id) ? '찜 해제' : '찜하기'}
+                  >
+                    <Heart className={`w-5 h-5 ${favorites.includes(review.id) ? 'fill-red-400 text-red-400' : 'text-gray-500'}`} />
+                  </button>
+                )}
+                <div className="absolute bottom-4 left-4 right-4 flex items-center gap-3 text-white text-xs font-bold drop-shadow-sm">
+                  <span className="flex items-center gap-1"><Heart className="w-4 h-4" /> {review.likes}</span>
+                  <span className="flex items-center gap-1"><MessageSquare className="w-4 h-4" /> {review.replies}</span>
+                </div>
+              </div>
+            )}
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center text-[#45a494] text-xs font-semibold">
+                  <MapPin className="w-3 h-3 mr-1" />
+                  {review.location}
+                </div>
+                {!review.image && toggleFavorite && (
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); toggleFavorite(review.id, e); }}
+                    className="p-1 rounded-full hover:bg-slate-100 transition-colors"
+                    aria-label={favorites.includes(review.id) ? '찜 해제' : '찜하기'}
+                  >
+                    <Heart className={`w-5 h-5 ${favorites.includes(review.id) ? 'fill-red-400 text-red-400' : 'text-gray-300'}`} />
+                  </button>
+                )}
+              </div>
+              <h3 className="font-bold text-lg">{review.user}님의 여행 기록</h3>
+              <p className="text-gray-600 text-sm mt-2 line-clamp-3">{review.comment}</p>
+              <div className="flex items-center gap-4 mt-4 text-gray-400 text-xs">
+                {!review.image && (
+                  <>
+                    <span className="flex items-center"><Heart className="w-4 h-4 mr-1 text-red-400" /> {review.likes}</span>
+                    <span className="flex items-center"><MessageSquare className="w-4 h-4 mr-1" /> {review.replies}</span>
+                  </>
+                )}
+                <span className="text-[#45a494] font-bold ml-auto">전체보기 <ChevronRight className="w-4 h-4 inline" /></span>
+              </div>
+            </div>
+          </div>
+        ))}
+        {filteredPosts.length > 0 ? (
+          filteredPosts.map((post) => (
+            <button
+              key={post.id}
+              type="button"
+              onClick={() => onPostClick(post)}
+              className="w-full text-left bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 hover:shadow-md transition-shadow"
+            >
+              <div className="relative h-64">
+                <SafeImage src={post.image_url} alt={post.title} className="w-full h-full object-cover" />
+                <div className="absolute top-4 left-4 flex gap-2 flex-wrap">
+                  {(post.tags || []).map((tag) => (
+                    <span key={tag} className="px-3 py-1 bg-black/40 backdrop-blur-md text-white text-[10px] font-bold rounded-full">#{tag}</span>
+                  ))}
+                </div>
+                <div className="absolute bottom-4 left-4 right-4 flex items-center gap-3 text-white text-xs font-bold">
+                  <span className="flex items-center gap-1"><Heart className="w-4 h-4" /> {post.likes_count ?? 0}</span>
+                  <span className="flex items-center gap-1"><MessageSquare className="w-4 h-4" /> {post.comments_count ?? 0}</span>
+                </div>
+              </div>
+              <div className="p-4">
+                <p className="text-[#45a494] text-xs font-semibold mb-1">{post.author_nickname || '작성자'}</p>
+                <h3 className="font-bold text-lg text-gray-800">{post.title}</h3>
+                <p className="text-gray-600 text-sm line-clamp-2 mt-2 leading-relaxed">{post.content}</p>
+              </div>
+            </button>
+          ))
+        ) : filteredDummyCards.length === 0 ? (
+          <div className="py-20 text-center text-gray-300 italic">게시물이 없습니다.</div>
+        ) : null}
+      </div>
     </div>
-  </div>
-);
+  );
+};
 
 // 게시물 상세 (인스타 스타일: 이미지, 글, 좋아요, 댓글)
 const PostDetailView = ({ post, user, onClose, onLikeChange }) => {
@@ -1034,9 +1134,13 @@ function MapViewKakao() {
     const region = MAP_REGIONS.find((r) => r.value === selectedRegion);
     const isBarrierFreeMode = region?.useBarrierFreeTable || selectedRegion.startsWith('barrier_free-');
     if (isBarrierFreeMode) {
+      const targetInMarkers = allMarkersRef.current.find((item) => item.placeId === placeId);
+      if (targetInMarkers) {
+        kakao.maps.event.trigger(targetInMarkers.marker, 'click');
+        return;
+      }
       const data = barrierFreePlacesDataRef.current;
-      if (!data) return;
-      const place = data.find((p) => p.id === placeId);
+      const place = data ? data.find((p) => p.id === placeId) : null;
       if (!place) return;
       const createMarker = createMarkerWithLabelRef.current;
       if (!createMarker) return;
@@ -1314,6 +1418,16 @@ function MapViewKakao() {
               map.setCenter(position);
               if (map.getLevel() > 3) map.setLevel(3);
               setSelectedPlaceId(p.id);
+              const singlePlaceItem = {
+                id: p.id,
+                name: placeInfo.name,
+                detailInfo: placeInfo.detailInfo,
+                disabledInfo: placeInfo.disabledInfo,
+                modifiedAt: placeInfo.modifiedAt,
+                primaryBadge: getPrimaryBadge(placeInfo),
+              };
+              setPlaceList([singlePlaceItem]);
+              setIsListOpen(true);
 
               const matchedRegion = MAP_REGIONS.find(
                 (r) =>
@@ -1351,6 +1465,24 @@ function MapViewKakao() {
                     item.marker.setImage(createMarkerImageForLevel(kakao, level, color, !!item.isSelected));
                     item.marker.setMap(showPins ? map : null);
                   });
+                  const placesListItems = placesData.map((placeRow) => {
+                    const pi = {
+                      name: placeRow.name || '',
+                      detailInfo: placeRow.detail_info || '',
+                      disabledInfo: placeRow.disabled_info || '',
+                      modifiedAt: placeRow.modified_at || '',
+                    };
+                    return {
+                      id: placeRow.id,
+                      name: pi.name,
+                      detailInfo: pi.detailInfo,
+                      disabledInfo: pi.disabledInfo,
+                      modifiedAt: pi.modifiedAt,
+                      primaryBadge: getPrimaryBadge(pi),
+                    };
+                  });
+                  setPlaceList(placesListItems);
+                  setIsListOpen(true);
                 }
               }
             } else {
@@ -1570,8 +1702,8 @@ function MapViewKakao() {
           </div>
         )}
 
-        {/* 장소 목록 패널 (무장애 여행지 모드에서는 검색만 사용) */}
-        {!isBarrierFreeMode && isListOpen && placeList.length > 0 && (
+        {/* 장소 목록 패널 (맵 하단 핀 정보 목록) */}
+        {isListOpen && placeList.length > 0 && (
           <div className="absolute left-4 right-4 bottom-4 z-10 pointer-events-none">
             <div className="bg-white/95 backdrop-blur-sm border border-gray-200 rounded-2xl shadow-lg max-h-52 overflow-y-auto no-scrollbar pointer-events-auto">
               <div className="px-4 py-2 border-b border-gray-100 flex items-center justify-between">
@@ -1632,8 +1764,8 @@ function MapViewKakao() {
           </div>
         )}
 
-        {/* 목록 열기 토글 버튼 (무장애 여행지 모드에서는 미표시) */}
-        {!isBarrierFreeMode && !isListOpen && placeList.length > 0 && (
+        {/* 목록 열기 토글 버튼 */}
+        {!isListOpen && placeList.length > 0 && (
           <button
             type="button"
             onClick={() => setIsListOpen(true)}
@@ -2006,6 +2138,14 @@ export default function App() {
   const toggleFavorite = async (id, e) => {
     if (e) e.stopPropagation();
 
+    // 더미 카드(음수 id): API 호출 없이 로컬 찜만 토글
+    if (typeof id === 'number' && id < 0) {
+      setFavorites((prev) =>
+        prev.includes(id) ? prev.filter((favId) => favId !== id) : [...prev, id]
+      );
+      return;
+    }
+
     // 로그인하지 않은 경우 마이페이지로 유도
     if (!user) {
       setActiveTab('profile');
@@ -2102,9 +2242,8 @@ export default function App() {
     }
   };
 
-  // 홈: posts 기준 태그 및 필터 (카드 클릭 시 posts 상세 = 인스타 스타일)
-  // 홈 상단 태그: posts의 post_tags 데이터 (CRUD 반영)
-  const tags = ['전체', ...new Set(posts.flatMap((p) => p.tags || []))].filter(Boolean);
+  // 홈: posts + 더미 카드 기준 태그 및 필터 (카드 클릭 시 posts 상세 = 인스타 스타일)
+  const tags = ['전체', ...new Set([...posts.flatMap((p) => p.tags || []), ...DUMMY_HOME_CARDS.flatMap((c) => c.tags || [])])].filter(Boolean);
   const filteredPosts = posts
     .filter((p) => selectedTag === '전체' || (p.tags || []).includes(selectedTag))
     .filter((p) => {
@@ -2213,6 +2352,9 @@ export default function App() {
                 tags={tags}
                 filteredPosts={filteredPosts}
                 onPostClick={(post) => setSelectedPost(post)}
+                dummyCards={DUMMY_HOME_CARDS}
+                favorites={favorites}
+                toggleFavorite={toggleFavorite}
               />
               {selectedPost && (
                 <PostDetailView
