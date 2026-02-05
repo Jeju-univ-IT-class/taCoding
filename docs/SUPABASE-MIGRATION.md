@@ -122,6 +122,13 @@ CREATE INDEX idx_places_name ON places(name);
 CREATE INDEX idx_places_recommended ON places(is_recommended);
 ```
 
+#### 2.1.2-1 무장애 여행 정보 테이블 (`barrier_free_places`) — 탐색 탭 스크롤 목록
+
+탐색 탭에서 "무장애 여행 정보" 지역을 선택했을 때 참조하는 테이블입니다. CSV(이름, 주소, 위도, 경도)와 동일 구조입니다.
+
+- **SQL 파일**: `docs/supabase-barrier-free-places.sql` 내용을 SQL Editor에서 실행하세요.
+- **시드**: `npm run seed:barrier-free` 실행 후 생성된 `scripts/seed-barrier-free-places.sql`을 SQL Editor에서 실행하면 CSV 데이터가 들어갑니다. (CSV는 UTF-8로 저장되어 있어야 합니다.)
+
 #### 2.1.3 리뷰 테이블 (`reviews`)
 
 ```sql
