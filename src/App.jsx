@@ -133,6 +133,8 @@ const MAP_REGIONS = [
   { value: '50-제주도립미술관',     label: '제주도립미술관', file: '/region_50.csv', dbRegion: '50' },
   // 협재 해수욕장은 Supabase places.region = '10' 으로 저장
   { value: 'hyopjae-협재해수욕장', label: '협재 해수욕장', file: HYOPJAE_CSV, format: 'hyopjae', imageBaseUrl: HYOPJAE_IMAGES, dbRegion: '10' },
+  // 무장애 여행 정보: Supabase barrier_free_places 테이블 사용 (탐색 탭 스크롤 목록)
+  { value: 'barrier_free-무장애여행정보', label: '무장애 여행 정보', dbRegion: 'barrier_free', useBarrierFreeTable: true },
 ];
 
 // CSV에서 무장애/장애물 관련 뱃지로 쓸 키워드 (휠체어 이용자 장애물 우선, 그다음 시설)
@@ -261,12 +263,14 @@ function extractBadgesFromPlaces(places) {
   return Array.from(set);
 }
 
-// Supabase places 테이블에서 지역별 장소 조회 후 무장애/장애물 뱃지 추출
+// Supabase places / barrier_free_places에서 지역별 장소 조회 후 무장애/장애물 뱃지 추출
 async function fetchRegionBadges(regionKey) {
   const region = MAP_REGIONS.find((r) => r.value === regionKey);
   if (!region?.dbRegion) return [];
   try {
-    const places = await db.places.findByRegion(region.dbRegion);
+    const places = region.useBarrierFreeTable
+      ? await db.barrierFreePlaces.findAll()
+      : await db.places.findByRegion(region.dbRegion);
     if (!Array.isArray(places) || places.length === 0) return [];
     const normalized = places.map((p) => ({
       detailInfo: p.detail_info ?? '',
@@ -1160,12 +1164,14 @@ function MapViewKakao() {
       });
       return { marker, labelOverlay: customOverlay, infoCardOverlay, position, primaryBadge, isSelected: false, placeId };
     };
-    // Supabase places 테이블에서 선택된 region의 장소들을 불러와 마커 생성
+    // Supabase: 무장애 여행 정보는 barrier_free_places, 그 외는 places 테이블에서 로드
     let cancelled = false;
     (async () => {
       try {
         const dbRegion = region.dbRegion || selectedRegion;
-        const placeRows = await db.places.findByRegion(dbRegion);
+        const placeRows = region.useBarrierFreeTable
+          ? await db.barrierFreePlaces.findAll()
+          : await db.places.findByRegion(dbRegion);
         if (cancelled || !mapInstanceRef.current || !kakaoRef.current) return;
 
         if (!Array.isArray(placeRows) || placeRows.length === 0) {

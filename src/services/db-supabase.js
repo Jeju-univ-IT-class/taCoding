@@ -669,6 +669,86 @@ export const places = {
   }
 };
 
+// 무장애 여행 정보 (탐색 탭 스크롤 목록용) — CSV 기반 barrier_free_places 테이블
+export const barrierFreePlaces = {
+  async create({ name, address = null, latitude, longitude }) {
+    const { data, error } = await supabase
+      .from('barrier_free_places')
+      .insert({
+        name,
+        address,
+        latitude: Number(latitude),
+        longitude: Number(longitude)
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return this.mapToPlace(data);
+  },
+
+  async findAll() {
+    const { data, error } = await supabase
+      .from('barrier_free_places')
+      .select('*')
+      .order('name');
+    if (error) throw error;
+    return (data || []).map(this.mapToPlace);
+  },
+
+  async findById(id) {
+    const { data, error } = await supabase
+      .from('barrier_free_places')
+      .select('*')
+      .eq('id', id)
+      .single();
+    if (error || !data) return null;
+    return this.mapToPlace(data);
+  },
+
+  async update(id, { name, address, latitude, longitude }) {
+    const updates = {};
+    if (name !== undefined) updates.name = name;
+    if (address !== undefined) updates.address = address;
+    if (latitude !== undefined) updates.latitude = Number(latitude);
+    if (longitude !== undefined) updates.longitude = Number(longitude);
+    if (Object.keys(updates).length === 0) return this.findById(id);
+
+    const { data, error } = await supabase
+      .from('barrier_free_places')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw error;
+    return this.mapToPlace(data);
+  },
+
+  async delete(id) {
+    const { error } = await supabase
+      .from('barrier_free_places')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
+  },
+
+  // places와 호환되는 형태로 매핑 (탐색 탭 UI에서 그대로 사용)
+  mapToPlace(data) {
+    return {
+      id: data.id,
+      region: 'barrier_free',
+      latitude: parseFloat(data.latitude),
+      longitude: parseFloat(data.longitude),
+      name: data.name,
+      detail_info: data.address || '',
+      disabled_info: null,
+      is_recommended: false,
+      data_quality: null,
+      modified_at: null,
+      created_at: data.created_at
+    };
+  }
+};
+
 // 찜 관련 함수
 export const wishlists = {
   async add(memberId, targetType, targetId) {
@@ -746,6 +826,7 @@ export default {
   reviews,
   posts,
   places,
+  barrierFreePlaces,
   wishlists,
   postLikes,
   postComments
