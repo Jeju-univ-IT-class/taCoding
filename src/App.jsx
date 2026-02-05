@@ -113,7 +113,7 @@ const INITIAL_REVIEWS = [
 
 const REVIEWS = INITIAL_REVIEWS;
 
-// 홈 탭 더미 카드 (과거 커밋 스타일 리뷰 카드, 태그 필터·찜 연동용 숫자 id)
+// 홈 탭 더미 카드 (과거 커밋 스타일 리뷰 카드, 태그 필터·찜 연동용 숫자 id, detail_info로 무장애 뱃지 추출)
 const DUMMY_HOME_CARDS = [
   {
     id: -1,
@@ -125,6 +125,8 @@ const DUMMY_HOME_CARDS = [
     likes: 342,
     replies: 45,
     tags: ['바다뷰', '일출맛집'],
+    detail_info: '경사로 접근로 전망대 무장애',
+    disabled_info: '',
   },
   {
     id: -2,
@@ -136,6 +138,8 @@ const DUMMY_HOME_CARDS = [
     likes: 215,
     replies: 12,
     tags: ['바다뷰', '주차가능', '반려동물동반'],
+    detail_info: '접근로 휠체어 무장애 화장실 주차',
+    disabled_info: '',
   },
   {
     id: -3,
@@ -147,6 +151,8 @@ const DUMMY_HOME_CARDS = [
     likes: 189,
     replies: 28,
     tags: ['주차가능'],
+    detail_info: '주차 무장애 화장실',
+    disabled_info: '',
   },
 ];
 
@@ -301,6 +307,16 @@ function extractBadgesFromPlaces(places) {
   return Array.from(set);
 }
 
+// 단일 텍스트에서 무장애/장애 관련 뱃지 키워드 추출 (홈 더미 카드용)
+function extractBadgesFromText(text) {
+  if (!text || typeof text !== 'string') return [];
+  const list = [];
+  BADGE_KEYWORDS.forEach((kw) => {
+    if (text.includes(kw)) list.push(kw);
+  });
+  return list;
+}
+
 // Supabase places / barrier_free_places에서 지역별 장소 조회 후 무장애/장애물 뱃지 추출
 async function fetchRegionBadges(regionKey) {
   const region = MAP_REGIONS.find((r) => r.value === regionKey);
@@ -446,6 +462,24 @@ const HomeView = ({ searchQuery, setSearchQuery, selectedTag, setSelectedTag, ta
                 </div>
               </div>
             )}
+            {(() => {
+              const badgeText = `${review.comment || ''} ${review.detail_info || ''} ${review.disabled_info || ''}`;
+              const badges = extractBadgesFromText(badgeText);
+              return badges.length > 0 ? (
+                <div className="px-4 py-2 flex flex-wrap gap-1.5 border-b border-gray-100 bg-gray-50/80">
+                  {badges.map((badge) => {
+                    const style = getBadgeStyle(badge);
+                    const Icon = style.Icon;
+                    return (
+                      <span key={badge} className={`inline-flex items-center gap-1 px-2 py-1 rounded-full border text-[10px] font-semibold shrink-0 ${style.className}`}>
+                        <Icon className="w-3 h-3" />
+                        {badge}
+                      </span>
+                    );
+                  })}
+                </div>
+              ) : null;
+            })()}
             <div className="p-4">
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center text-[#45a494] text-xs font-semibold">
