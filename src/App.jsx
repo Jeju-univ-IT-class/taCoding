@@ -133,8 +133,8 @@ const MAP_REGIONS = [
   { value: '50-제주도립미술관',     label: '제주도립미술관', file: '/region_50.csv', dbRegion: '50' },
   // 협재 해수욕장은 Supabase places.region = '10' 으로 저장
   { value: 'hyopjae-협재해수욕장', label: '협재 해수욕장', file: HYOPJAE_CSV, format: 'hyopjae', imageBaseUrl: HYOPJAE_IMAGES, dbRegion: '10' },
-  // 무장애 여행 정보: Supabase barrier_free_places 테이블 사용 (탐색 탭 스크롤 목록)
-  { value: 'barrier_free-무장애여행정보', label: '무장애 여행 정보', dbRegion: 'barrier_free', useBarrierFreeTable: true },
+  // 무장애 여행지: barrier_free_places.name 컬럼 조회로 목록 채움 (탐색 탭 스크롤 목록)
+  { value: 'barrier_free-무장애여행정보', label: '무장애 여행지 (장소명)', dbRegion: 'barrier_free', useBarrierFreeTable: true },
 ];
 
 // CSV에서 무장애/장애물 관련 뱃지로 쓸 키워드 (휠체어 이용자 장애물 우선, 그다음 시설)
@@ -967,6 +967,9 @@ function MapViewKakao() {
   const kakaoRef = useRef(null);
   const currentLocationMarkerRef = useRef(null);
   const zoomListenerRef = useRef(null);
+  const barrierFreePlacesDataRef = useRef(null);
+  const barrierFreeSingleMarkerRef = useRef(null);
+  const createMarkerWithLabelRef = useRef(null);
   const [selectedRegion, setSelectedRegion] = useState(MAP_REGIONS[0].value);
   const [mapReady, setMapReady] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -975,6 +978,7 @@ function MapViewKakao() {
   const [placeList, setPlaceList] = useState([]);
   const [selectedPlaceId, setSelectedPlaceId] = useState(null);
   const [isListOpen, setIsListOpen] = useState(false);
+  const [barrierFreeHeaderOptions, setBarrierFreeHeaderOptions] = useState([]);
 
   const handleZoomIn = () => {
     const map = mapInstanceRef.current;
@@ -1026,6 +1030,45 @@ function MapViewKakao() {
     const kakao = kakaoRef.current;
     const map = mapInstanceRef.current;
     if (!kakao || !map) return;
+    const region = MAP_REGIONS.find((r) => r.value === selectedRegion);
+    const isBarrierFreeMode = region?.useBarrierFreeTable || selectedRegion.startsWith('barrier_free-');
+    if (isBarrierFreeMode) {
+      const data = barrierFreePlacesDataRef.current;
+      if (!data) return;
+      const place = data.find((p) => p.id === placeId);
+      if (!place) return;
+      const createMarker = createMarkerWithLabelRef.current;
+      if (!createMarker) return;
+      const prev = barrierFreeSingleMarkerRef.current;
+      if (prev) {
+        prev.marker.setMap(null);
+        prev.labelOverlay.setMap(null);
+        prev.infoCardOverlay.setMap(null);
+      }
+      const position = new kakao.maps.LatLng(Number(place.latitude), Number(place.longitude));
+      const placeInfo = {
+        name: place.name || '',
+        detailInfo: place.detail_info || '',
+        disabledInfo: place.disabled_info || '',
+        modifiedAt: place.modified_at || '',
+        imageFile: null,
+      };
+      const obj = createMarker(position, placeInfo, place.id);
+      obj.marker.setMap(map);
+      obj.marker.setZIndex(10);
+      const primaryBadge = getPrimaryBadge(placeInfo);
+      const pinColor = getPinColorForBadge(primaryBadge);
+      obj.marker.setImage(createMarkerImageForLevel(kakao, map.getLevel(), pinColor, true));
+      barrierFreeSingleMarkerRef.current = obj;
+      selectedMarkerRef.current = obj.marker;
+      if (currentInfoCardRef.current) currentInfoCardRef.current.setMap(null);
+      obj.infoCardOverlay.setMap(map);
+      currentInfoCardRef.current = obj.infoCardOverlay;
+      map.panTo(position);
+      if (map.getLevel() > 3) map.setLevel(3);
+      setSelectedPlaceId(placeId);
+      return;
+    }
     const target = allMarkersRef.current.find((item) => item.placeId === placeId);
     if (!target) return;
     kakao.maps.event.trigger(target.marker, 'click');
@@ -1049,16 +1092,21 @@ function MapViewKakao() {
           currentInfoCardRef.current = null;
         }
         if (selectedMarkerRef.current) {
-          // 지도 클릭 시에는 zIndex 및 선택 상태만 초기화 (아이콘은 다음 줌 변경 시 갱신)
           const prevMarker = selectedMarkerRef.current;
           const prevItem = allMarkersRef.current.find((it) => it.marker === prevMarker);
+          const single = barrierFreeSingleMarkerRef.current;
+          const isSingleMarker = single && single.marker === prevMarker;
           prevMarker.setZIndex(0);
           if (prevItem) {
             prevItem.isSelected = false;
+            // 일반 지역: 아이콘은 다음 줌 변경 시 갱신
+          } else if (isSingleMarker && single && kakaoRef.current) {
+            const color = getPinColorForBadge(single.primaryBadge);
+            prevMarker.setImage(createMarkerImageForLevel(kakaoRef.current, map.getLevel(), color, false));
           }
           selectedMarkerRef.current = null;
         }
-        // 열려 있는 목록도 닫기
+        setSelectedPlaceId(null);
         setIsListOpen(false);
       });
 
@@ -1081,20 +1129,28 @@ function MapViewKakao() {
 
   useEffect(() => {
     if (!mapReady || !mapInstanceRef.current || !kakaoRef.current) return;
-    const region = MAP_REGIONS.find((r) => r.value === selectedRegion);
-    if (!region) return;
     const kakao = kakaoRef.current;
     const map = mapInstanceRef.current;
     if (zoomListenerRef.current) {
       try { zoomListenerRef.current(); } catch (_) { /* 리스너 제거 실패 시 무시 */ }
       zoomListenerRef.current = null;
     }
+    const prevSingle = barrierFreeSingleMarkerRef.current;
+    if (prevSingle) {
+      prevSingle.marker.setMap(null);
+      prevSingle.labelOverlay.setMap(null);
+      prevSingle.infoCardOverlay.setMap(null);
+      barrierFreeSingleMarkerRef.current = null;
+    }
+    barrierFreePlacesDataRef.current = null;
+    createMarkerWithLabelRef.current = null;
     allMarkersRef.current.forEach((item) => { item.marker.setMap(null); item.labelOverlay.setMap(null); item.infoCardOverlay.setMap(null); });
     allMarkersRef.current = [];
     setPlaceList([]);
     setSelectedPlaceId(null);
     if (currentInfoCardRef.current) { currentInfoCardRef.current.setMap(null); currentInfoCardRef.current = null; }
-    const imageBaseUrl = region.imageBaseUrl || '';
+    const region = MAP_REGIONS.find((r) => r.value === selectedRegion);
+    const imageBaseUrl = region?.imageBaseUrl || '';
     const createMarkerWithLabel = (position, placeInfo, placeId) => {
       const primaryBadge = getPrimaryBadge(placeInfo);
       const pinColor = getPinColorForBadge(primaryBadge);
@@ -1164,57 +1220,142 @@ function MapViewKakao() {
       });
       return { marker, labelOverlay: customOverlay, infoCardOverlay, position, primaryBadge, isSelected: false, placeId };
     };
-    // Supabase: 무장애 여행 정보는 barrier_free_places, 그 외는 places 테이블에서 로드
+    createMarkerWithLabelRef.current = createMarkerWithLabel;
     let cancelled = false;
     (async () => {
       try {
-        const dbRegion = region.dbRegion || selectedRegion;
-        const placeRows = region.useBarrierFreeTable
-          ? await db.barrierFreePlaces.findAll()
-          : await db.places.findByRegion(dbRegion);
-        if (cancelled || !mapInstanceRef.current || !kakaoRef.current) return;
+        const map = mapInstanceRef.current;
+        const isBarrierFreePlaceSelection = selectedRegion.startsWith('barrier_free-') && selectedRegion !== 'barrier_free-무장애여행정보';
+        let placeRows = null;
+        let useBarrierFreeOnlyList = false;
+        let region = MAP_REGIONS.find((r) => r.value === selectedRegion);
 
+        if (isBarrierFreePlaceSelection) {
+          const placeId = Number(selectedRegion.replace('barrier_free-', ''));
+          if (!Number.isNaN(placeId)) {
+            let data = barrierFreePlacesDataRef.current;
+            if (!data) {
+              data = await db.barrierFreePlaces.findAll();
+              if (cancelled) return;
+              barrierFreePlacesDataRef.current = data;
+            }
+            const place = data.find((p) => p.id === placeId);
+            if (place) {
+              placeRows = [place];
+              useBarrierFreeOnlyList = true;
+            }
+          }
+        } else if (region?.useBarrierFreeTable) {
+          placeRows = await db.barrierFreePlaces.findAll();
+          useBarrierFreeOnlyList = true;
+        } else if (region?.dbRegion) {
+          placeRows = await db.places.findByRegion(region.dbRegion);
+        }
+
+        if (cancelled || !mapInstanceRef.current || !kakaoRef.current) return;
         if (!Array.isArray(placeRows) || placeRows.length === 0) {
-          console.warn('선택된 지역에 Supabase places 데이터가 없습니다:', selectedRegion, dbRegion);
+          if (!isBarrierFreePlaceSelection && !region) return;
+          console.warn('선택된 지역에 Supabase places 데이터가 없습니다:', selectedRegion);
           return;
         }
 
         const allMarkers = [];
         const uiPlaces = [];
-        placeRows.forEach((p, index) => {
-          if (p.latitude == null || p.longitude == null) return;
-          const lat = Number(p.latitude);
-          const lng = Number(p.longitude);
-          if (Number.isNaN(lat) || Number.isNaN(lng)) return;
-          const position = new kakao.maps.LatLng(lat, lng);
-          const placeInfo = {
-            name: p.name || '',
-            detailInfo: p.detail_info || '',
-            disabledInfo: p.disabled_info || '',
-            modifiedAt: p.modified_at || '',
-            imageFile: null,
-          };
-          const primaryBadge = getPrimaryBadge(placeInfo);
-          uiPlaces.push({
-            id: p.id,
-            name: placeInfo.name,
-            detailInfo: placeInfo.detailInfo,
-            disabledInfo: placeInfo.disabledInfo,
-            modifiedAt: placeInfo.modifiedAt,
-            primaryBadge,
+
+        if (useBarrierFreeOnlyList) {
+          const listSource = (barrierFreePlacesDataRef.current && barrierFreePlacesDataRef.current.length >= placeRows.length)
+            ? barrierFreePlacesDataRef.current
+            : placeRows;
+          listSource.forEach((p) => {
+            if (p.latitude == null || p.longitude == null) return;
+            const placeInfo = {
+              name: p.name || '',
+              detailInfo: p.detail_info || '',
+              disabledInfo: p.disabled_info || '',
+              modifiedAt: p.modified_at || '',
+            };
+            const primaryBadge = getPrimaryBadge(placeInfo);
+            uiPlaces.push({
+              id: p.id,
+              name: placeInfo.name,
+              detailInfo: placeInfo.detailInfo,
+              disabledInfo: placeInfo.disabledInfo,
+              modifiedAt: placeInfo.modifiedAt,
+              primaryBadge,
+            });
           });
-          if (index === 0) {
-            map.setCenter(position);
-            map.setLevel(6);
+          setPlaceList(uiPlaces);
+          setIsListOpen(true);
+          if (isBarrierFreePlaceSelection && placeRows.length === 1) {
+            const p = placeRows[0];
+            const lat = Number(p.latitude);
+            const lng = Number(p.longitude);
+            if (!Number.isNaN(lat) && !Number.isNaN(lng)) {
+              const position = new kakao.maps.LatLng(lat, lng);
+              const placeInfo = {
+                name: p.name || '',
+                detailInfo: p.detail_info || '',
+                disabledInfo: p.disabled_info || '',
+                modifiedAt: p.modified_at || '',
+                imageFile: null,
+              };
+              const obj = createMarkerWithLabel(position, placeInfo, p.id);
+              obj.marker.setMap(map);
+              obj.marker.setZIndex(10);
+              const primaryBadge = getPrimaryBadge(placeInfo);
+              const pinColor = getPinColorForBadge(primaryBadge);
+              obj.marker.setImage(createMarkerImageForLevel(kakao, map.getLevel(), pinColor, true));
+              barrierFreeSingleMarkerRef.current = obj;
+              selectedMarkerRef.current = obj.marker;
+              obj.infoCardOverlay.setMap(map);
+              currentInfoCardRef.current = obj.infoCardOverlay;
+              map.setCenter(position);
+              if (map.getLevel() > 3) map.setLevel(3);
+              setSelectedPlaceId(p.id);
+            } else {
+              map.setCenter(new kakao.maps.LatLng(33.450701, 126.570667));
+              map.setLevel(9);
+            }
+          } else {
+            map.setCenter(new kakao.maps.LatLng(33.450701, 126.570667));
+            map.setLevel(9);
           }
-          try {
-            allMarkers.push(createMarkerWithLabel(position, placeInfo, p.id));
-          } catch (e) {
-            console.warn('마커 생성 스킵:', position, e);
-          }
-        });
-        allMarkersRef.current = allMarkers;
-        setPlaceList(uiPlaces);
+        } else {
+          placeRows.forEach((p, index) => {
+            if (p.latitude == null || p.longitude == null) return;
+            const lat = Number(p.latitude);
+            const lng = Number(p.longitude);
+            if (Number.isNaN(lat) || Number.isNaN(lng)) return;
+            const position = new kakao.maps.LatLng(lat, lng);
+            const placeInfo = {
+              name: p.name || '',
+              detailInfo: p.detail_info || '',
+              disabledInfo: p.disabled_info || '',
+              modifiedAt: p.modified_at || '',
+              imageFile: null,
+            };
+            const primaryBadge = getPrimaryBadge(placeInfo);
+            uiPlaces.push({
+              id: p.id,
+              name: placeInfo.name,
+              detailInfo: placeInfo.detailInfo,
+              disabledInfo: placeInfo.disabledInfo,
+              modifiedAt: placeInfo.modifiedAt,
+              primaryBadge,
+            });
+            if (index === 0) {
+              map.setCenter(position);
+              map.setLevel(6);
+            }
+            try {
+              allMarkers.push(createMarkerWithLabel(position, placeInfo, p.id));
+            } catch (e) {
+              console.warn('마커 생성 스킵:', position, e);
+            }
+          });
+          allMarkersRef.current = allMarkers;
+          setPlaceList(uiPlaces);
+        }
 
         const updateMarkersSize = () => {
           const level = map.getLevel();
@@ -1224,11 +1365,15 @@ function MapViewKakao() {
             const color = getPinColorForBadge(item.primaryBadge);
             item.marker.setImage(createMarkerImageForLevel(kakao, level, color, !!item.isSelected));
             item.marker.setMap(showPins ? map : null);
-            // 라벨은 기본 상태에서는 숨기고, 호버 이벤트에서만 제어
-            if (!showPins) {
-              item.labelOverlay.setMap(null);
-            }
+            if (!showPins) item.labelOverlay.setMap(null);
           });
+          const single = barrierFreeSingleMarkerRef.current;
+          if (single) {
+            const color = getPinColorForBadge(single.primaryBadge);
+            single.marker.setImage(createMarkerImageForLevel(kakao, level, color, true));
+            single.marker.setMap(showPins ? map : null);
+            if (!showPins) single.labelOverlay.setMap(null);
+          }
         };
 
         const listenerId = kakao.maps.event.addListener(map, 'zoom_changed', updateMarkersSize);
@@ -1248,7 +1393,40 @@ function MapViewKakao() {
     };
   }, [selectedRegion, mapReady]);
 
-  const currentRegionLabel = MAP_REGIONS.find((r) => r.value === selectedRegion)?.label ?? selectedRegion;
+  // 목록 헤더(드롭다운)용: barrier_free_places 테이블의 name 컬럼 조회
+  useEffect(() => {
+    if (!mapReady) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const rows = await db.barrierFreePlaces.findAll();
+        if (cancelled) return;
+        barrierFreePlacesDataRef.current = rows;
+        setBarrierFreeHeaderOptions(
+          rows.map((p) => ({ value: `barrier_free-${p.id}`, label: p.name || '' }))
+        );
+      } catch (err) {
+        console.warn('무장애 여행지 목록 헤더 로드 실패:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [mapReady]);
+
+  const isBarrierFreePlace = selectedRegion.startsWith('barrier_free-') && selectedRegion !== 'barrier_free-무장애여행정보';
+  const barrierFreeLabel = isBarrierFreePlace
+    ? (barrierFreeHeaderOptions.find((o) => o.value === selectedRegion)?.label ?? selectedRegion)
+    : null;
+  const currentRegion = MAP_REGIONS.find((r) => r.value === selectedRegion);
+  const currentRegionLabel = barrierFreeLabel ?? currentRegion?.label ?? selectedRegion;
+  const isBarrierFreeList = currentRegion?.useBarrierFreeTable === true || isBarrierFreePlace;
+  const listHeaderText = isBarrierFreeList
+    ? `무장애 여행지 (장소명) ${placeList.length}곳`
+    : `${currentRegionLabel} 무장애 여행지 ${placeList.length}곳`;
+
+  const dropdownOptions = [
+    ...MAP_REGIONS.filter((r) => !r.useBarrierFreeTable),
+    ...barrierFreeHeaderOptions,
+  ];
   return (
     <div className="h-full flex flex-col min-h-[420px]">
       <div className="p-4 bg-white border-b z-10 flex flex-col gap-2">
@@ -1270,7 +1448,7 @@ function MapViewKakao() {
             <>
               <div className="fixed inset-0 z-10" onClick={() => setDropdownOpen(false)} aria-hidden="true" />
               <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-20 max-h-48 overflow-y-auto">
-                {MAP_REGIONS.map((r) => (
+                {dropdownOptions.map((r) => (
                   <button key={r.value} type="button" onClick={() => { setSelectedRegion(r.value); setDropdownOpen(false); }} className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${selectedRegion === r.value ? 'bg-[#45a494]/10 text-[#45a494] font-medium' : 'text-gray-700'}`}>
                     {r.label}
                   </button>
@@ -1335,7 +1513,7 @@ function MapViewKakao() {
             <div className="bg-white/95 backdrop-blur-sm border border-gray-200 rounded-2xl shadow-lg max-h-52 overflow-y-auto no-scrollbar pointer-events-auto">
               <div className="px-4 py-2 border-b border-gray-100 flex items-center justify-between">
                 <span className="text-xs font-bold text-gray-500">
-                  {currentRegionLabel} 무장애 여행지 {placeList.length}곳
+                  {listHeaderText}
                 </span>
                 <button
                   type="button"
