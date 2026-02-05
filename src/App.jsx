@@ -2152,13 +2152,16 @@ export default function App() {
     checkSessionAndLoad();
   }, []);
 
-  // 로그인한 사용자의 찜 목록 초기화
+  // 로그인한 사용자의 찜 목록 초기화 (DB id는 그대로 두고, 더미 찜(음수 id)은 로컬에서 유지)
   useEffect(() => {
     if (!user) return;
     (async () => {
       try {
         const ids = await db.wishlists.getWishlistIds(user.id, 'REVIEW');
-        setFavorites(ids.map((id) => Number(id)));
+        setFavorites((prev) => {
+          const dummyIds = Array.isArray(prev) ? prev.filter((id) => typeof id === 'number' && id < 0) : [];
+          return [...ids, ...dummyIds];
+        });
       } catch (err) {
         console.error('Failed to load wishlist from Supabase:', err);
       }
@@ -2476,7 +2479,39 @@ export default function App() {
                 <p className="text-xs font-bold text-gray-400">총 {favorites.length}개의 찜</p>
               </div>
               <div className="p-4 space-y-6">
-                {favorites.length === 0 ? (<div className="py-20 text-center text-gray-300 italic">찜한 장소가 없습니다.</div>) : (reviews.filter(r => favorites.includes(r.id)).map(review => (<div key={review.id} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 mb-4"><div className="relative h-48"><SafeImage src={review.image} alt={review.location} className="w-full h-full object-cover" /><button onClick={() => toggleFavorite(review.id)} className="absolute top-4 right-4 p-2 bg-red-50 rounded-full"><Heart className="w-5 h-5 fill-red-500 text-red-500" /></button></div><div className="p-4"><h3 className="font-bold text-lg">{review.location}</h3></div></div>)))}
+                {favorites.length === 0 ? (
+                  <div className="py-20 text-center text-gray-300 italic">찜한 장소가 없습니다.</div>
+                ) : (
+                  <>
+                    {DUMMY_HOME_CARDS.filter((c) => favorites.includes(c.id)).map((item) => (
+                      <div key={item.id} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 mb-4">
+                        <div className="relative h-48">
+                          <SafeImage src={item.image} alt={item.location} className="w-full h-full object-cover" />
+                          <button type="button" onClick={() => toggleFavorite(item.id)} className="absolute top-4 right-4 p-2 bg-red-50 rounded-full">
+                            <Heart className="w-5 h-5 fill-red-500 text-red-500" />
+                          </button>
+                        </div>
+                        <div className="p-4">
+                          <h3 className="font-bold text-lg">{item.location}</h3>
+                          <p className="text-gray-500 text-sm mt-1">{item.user}님의 여행 기록</p>
+                        </div>
+                      </div>
+                    ))}
+                    {reviews.filter((r) => favorites.some((f) => String(f) === String(r.id))).map((review) => (
+                      <div key={review.id} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 mb-4">
+                        <div className="relative h-48">
+                          <SafeImage src={review.image} alt={review.location} className="w-full h-full object-cover" />
+                          <button type="button" onClick={() => toggleFavorite(review.id)} className="absolute top-4 right-4 p-2 bg-red-50 rounded-full">
+                            <Heart className="w-5 h-5 fill-red-500 text-red-500" />
+                          </button>
+                        </div>
+                        <div className="p-4">
+                          <h3 className="font-bold text-lg">{review.location}</h3>
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
               </div>
             </div>
           )}
