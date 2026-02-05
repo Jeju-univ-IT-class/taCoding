@@ -133,8 +133,8 @@ const MAP_REGIONS = [
   { value: '50-제주도립미술관',     label: '제주도립미술관', file: '/region_50.csv', dbRegion: '50' },
   // 협재 해수욕장은 Supabase places.region = '10' 으로 저장
   { value: 'hyopjae-협재해수욕장', label: '협재 해수욕장', file: HYOPJAE_CSV, format: 'hyopjae', imageBaseUrl: HYOPJAE_IMAGES, dbRegion: '10' },
-  // 무장애 여행지: barrier_free_places.name 컬럼 조회로 목록 채움 (탐색 탭 스크롤 목록)
-  { value: 'barrier_free-무장애여행정보', label: '무장애 여행지 (장소명)', dbRegion: 'barrier_free', useBarrierFreeTable: true },
+  // 무장애 여행지: 검색으로 barrier_free_places 조회 후 선택 시 핀 표시
+  { value: 'barrier_free-무장애여행정보', label: '무장애 여행지 (검색)', dbRegion: 'barrier_free', useBarrierFreeTable: true },
 ];
 
 // CSV에서 무장애/장애물 관련 뱃지로 쓸 키워드 (휠체어 이용자 장애물 우선, 그다음 시설)
@@ -970,15 +970,16 @@ function MapViewKakao() {
   const barrierFreePlacesDataRef = useRef(null);
   const barrierFreeSingleMarkerRef = useRef(null);
   const createMarkerWithLabelRef = useRef(null);
-  const [selectedRegion, setSelectedRegion] = useState(MAP_REGIONS[0].value);
+  const [selectedRegion, setSelectedRegion] = useState('barrier_free-무장애여행정보');
   const [mapReady, setMapReady] = useState(false);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
   const [locationError, setLocationError] = useState(null);
   const [showLegend, setShowLegend] = useState(false);
   const [placeList, setPlaceList] = useState([]);
   const [selectedPlaceId, setSelectedPlaceId] = useState(null);
   const [isListOpen, setIsListOpen] = useState(false);
-  const [barrierFreeHeaderOptions, setBarrierFreeHeaderOptions] = useState([]);
+  const [barrierFreeSearchQuery, setBarrierFreeSearchQuery] = useState('');
+  const [barrierFreeSearchOpen, setBarrierFreeSearchOpen] = useState(false);
+  const [selectedBarrierFreeName, setSelectedBarrierFreeName] = useState('');
 
   const handleZoomIn = () => {
     const map = mapInstanceRef.current;
@@ -1247,6 +1248,7 @@ function MapViewKakao() {
           }
         } else if (region?.useBarrierFreeTable) {
           placeRows = await db.barrierFreePlaces.findAll();
+          if (placeRows && placeRows.length > 0) barrierFreePlacesDataRef.current = placeRows;
           useBarrierFreeOnlyList = true;
         } else if (region?.dbRegion) {
           placeRows = await db.places.findByRegion(region.dbRegion);
@@ -1312,6 +1314,45 @@ function MapViewKakao() {
               map.setCenter(position);
               if (map.getLevel() > 3) map.setLevel(3);
               setSelectedPlaceId(p.id);
+
+              const matchedRegion = MAP_REGIONS.find(
+                (r) =>
+                  !r.useBarrierFreeTable &&
+                  ((p.name && p.name.includes(r.label)) || (p.detail_info && p.detail_info.includes(r.label)))
+              );
+              if (matchedRegion && !cancelled) {
+                const placesData = await db.places.findByRegion(matchedRegion.dbRegion);
+                if (cancelled || !mapInstanceRef.current || !kakaoRef.current) return;
+                if (Array.isArray(placesData) && placesData.length > 0) {
+                  placesData.forEach((placeRow) => {
+                    if (placeRow.latitude == null || placeRow.longitude == null) return;
+                    const plat = Number(placeRow.latitude);
+                    const plng = Number(placeRow.longitude);
+                    if (Number.isNaN(plat) || Number.isNaN(plng)) return;
+                    const pos = new kakao.maps.LatLng(plat, plng);
+                    const placeInfoForMarker = {
+                      name: placeRow.name || '',
+                      detailInfo: placeRow.detail_info || '',
+                      disabledInfo: placeRow.disabled_info || '',
+                      modifiedAt: placeRow.modified_at || '',
+                      imageFile: null,
+                    };
+                    try {
+                      allMarkers.push(createMarkerWithLabel(pos, placeInfoForMarker, placeRow.id));
+                    } catch (e) {
+                      console.warn('마커 생성 스킵:', pos, e);
+                    }
+                  });
+                  allMarkersRef.current = allMarkers;
+                  const level = map.getLevel();
+                  const showPins = level <= PIN_VISIBLE_MAX_LEVEL;
+                  allMarkersRef.current.forEach((item) => {
+                    const color = getPinColorForBadge(item.primaryBadge);
+                    item.marker.setImage(createMarkerImageForLevel(kakao, level, color, !!item.isSelected));
+                    item.marker.setMap(showPins ? map : null);
+                  });
+                }
+              }
             } else {
               map.setCenter(new kakao.maps.LatLng(33.450701, 126.570667));
               map.setLevel(9);
@@ -1393,7 +1434,7 @@ function MapViewKakao() {
     };
   }, [selectedRegion, mapReady]);
 
-  // 목록 헤더(드롭다운)용: barrier_free_places 테이블의 name 컬럼 조회
+  // 무장애 여행지 검색용: barrier_free_places 로드
   useEffect(() => {
     if (!mapReady) return;
     let cancelled = false;
@@ -1402,60 +1443,82 @@ function MapViewKakao() {
         const rows = await db.barrierFreePlaces.findAll();
         if (cancelled) return;
         barrierFreePlacesDataRef.current = rows;
-        setBarrierFreeHeaderOptions(
-          rows.map((p) => ({ value: `barrier_free-${p.id}`, label: p.name || '' }))
-        );
       } catch (err) {
-        console.warn('무장애 여행지 목록 헤더 로드 실패:', err);
+        console.warn('무장애 여행지 검색 데이터 로드 실패:', err);
       }
     })();
     return () => { cancelled = true; };
   }, [mapReady]);
 
-  const isBarrierFreePlace = selectedRegion.startsWith('barrier_free-') && selectedRegion !== 'barrier_free-무장애여행정보';
-  const barrierFreeLabel = isBarrierFreePlace
-    ? (barrierFreeHeaderOptions.find((o) => o.value === selectedRegion)?.label ?? selectedRegion)
-    : null;
   const currentRegion = MAP_REGIONS.find((r) => r.value === selectedRegion);
-  const currentRegionLabel = barrierFreeLabel ?? currentRegion?.label ?? selectedRegion;
-  const isBarrierFreeList = currentRegion?.useBarrierFreeTable === true || isBarrierFreePlace;
+  const isBarrierFreePlace = selectedRegion.startsWith('barrier_free-') && selectedRegion !== 'barrier_free-무장애여행정보';
+  const isBarrierFreeMode = currentRegion?.useBarrierFreeTable === true || isBarrierFreePlace;
+  const currentRegionLabel = isBarrierFreePlace
+    ? (selectedBarrierFreeName || barrierFreePlacesDataRef.current?.find((p) => String(p.id) === String(selectedRegion.replace('barrier_free-', '')))?.name || selectedRegion)
+    : (currentRegion?.label ?? selectedRegion);
+  const isBarrierFreeList = isBarrierFreeMode;
   const listHeaderText = isBarrierFreeList
     ? `무장애 여행지 (장소명) ${placeList.length}곳`
     : `${currentRegionLabel} 무장애 여행지 ${placeList.length}곳`;
 
-  const dropdownOptions = [
-    ...MAP_REGIONS.filter((r) => !r.useBarrierFreeTable),
-    ...barrierFreeHeaderOptions,
-  ];
+  const barrierFreeSearchResults = (() => {
+    const data = barrierFreePlacesDataRef.current;
+    if (!data || !barrierFreeSearchQuery.trim()) return [];
+    const q = barrierFreeSearchQuery.trim().toLowerCase();
+    return data.filter(
+      (p) =>
+        (p.name && String(p.name).toLowerCase().includes(q)) ||
+        (p.detail_info && String(p.detail_info).toLowerCase().includes(q))
+    );
+  })();
+
   return (
     <div className="h-full flex flex-col min-h-[420px]">
       <div className="p-4 bg-white border-b z-10 flex flex-col gap-2">
         <div className="flex justify-between items-center gap-2">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <input type="text" placeholder="주변 명소 검색" className="w-full bg-gray-100 rounded-lg py-2 pl-9 pr-4 text-xs focus:outline-none focus:ring-2 focus:ring-[#45a494]/20" />
+            <input
+              type="text"
+              placeholder="무장애 여행지 검색 (장소명·주소)"
+              className="w-full bg-gray-100 rounded-lg py-2 pl-9 pr-4 text-xs focus:outline-none focus:ring-2 focus:ring-[#45a494]/20"
+              value={barrierFreeSearchQuery}
+              onChange={(e) => setBarrierFreeSearchQuery(e.target.value)}
+              onFocus={() => setBarrierFreeSearchOpen(true)}
+            />
+            {barrierFreeSearchOpen && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setBarrierFreeSearchOpen(false)} aria-hidden="true" />
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-20 max-h-48 overflow-y-auto">
+                  {barrierFreeSearchResults.length === 0 ? (
+                    <div className="px-3 py-2 text-xs text-gray-500">
+                      {barrierFreeSearchQuery.trim() ? '검색 결과가 없습니다.' : '장소명 또는 주소를 입력하세요.'}
+                    </div>
+                  ) : (
+                    barrierFreeSearchResults.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedRegion('barrier_free-' + p.id);
+                          setSelectedBarrierFreeName(p.name || '');
+                          setBarrierFreeSearchQuery(p.name || '');
+                          setBarrierFreeSearchOpen(false);
+                        }}
+                        className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 text-gray-700"
+                      >
+                        <span className="font-medium">{p.name || '(이름 없음)'}</span>
+                        {p.detail_info && <span className="block text-[10px] text-gray-500 truncate mt-0.5">{p.detail_info}</span>}
+                      </button>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
           </div>
           <button type="button" className="p-2 bg-gray-100 rounded-lg flex-shrink-0">
             <Filter className="w-4 h-4 text-gray-600" />
           </button>
-        </div>
-        <div className="relative">
-          <button type="button" onClick={() => setDropdownOpen((v) => !v)} className="w-full flex items-center justify-between px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700">
-            <span>{currentRegionLabel}</span>
-            <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${dropdownOpen ? 'rotate-180' : ''}`} />
-          </button>
-          {dropdownOpen && (
-            <>
-              <div className="fixed inset-0 z-10" onClick={() => setDropdownOpen(false)} aria-hidden="true" />
-              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg py-1 z-20 max-h-48 overflow-y-auto">
-                {dropdownOptions.map((r) => (
-                  <button key={r.value} type="button" onClick={() => { setSelectedRegion(r.value); setDropdownOpen(false); }} className={`w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${selectedRegion === r.value ? 'bg-[#45a494]/10 text-[#45a494] font-medium' : 'text-gray-700'}`}>
-                    {r.label}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
         </div>
       </div>
       <div className="flex-1 relative overflow-hidden min-h-[320px] bg-gray-50 isolate">
@@ -1507,8 +1570,8 @@ function MapViewKakao() {
           </div>
         )}
 
-        {/* 장소 목록 패널 (접기/펼치기 가능) */}
-        {isListOpen && placeList.length > 0 && (
+        {/* 장소 목록 패널 (무장애 여행지 모드에서는 검색만 사용) */}
+        {!isBarrierFreeMode && isListOpen && placeList.length > 0 && (
           <div className="absolute left-4 right-4 bottom-4 z-10 pointer-events-none">
             <div className="bg-white/95 backdrop-blur-sm border border-gray-200 rounded-2xl shadow-lg max-h-52 overflow-y-auto no-scrollbar pointer-events-auto">
               <div className="px-4 py-2 border-b border-gray-100 flex items-center justify-between">
@@ -1569,8 +1632,8 @@ function MapViewKakao() {
           </div>
         )}
 
-        {/* 목록 열기 토글 버튼 (닫혀 있을 때만 표시) */}
-        {!isListOpen && placeList.length > 0 && (
+        {/* 목록 열기 토글 버튼 (무장애 여행지 모드에서는 미표시) */}
+        {!isBarrierFreeMode && !isListOpen && placeList.length > 0 && (
           <button
             type="button"
             onClick={() => setIsListOpen(true)}
