@@ -1,3 +1,5 @@
+release 2026/02/05 14:17
+
 # Jeju Reviews — Vite + React + Tailwind
 
 제주도 특화 리뷰 & 지도 뷰 앱입니다.
